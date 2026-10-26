@@ -299,20 +299,20 @@ dialog h2 { padding-bottom: .4rem; border-bottom: 2px dashed var(--line); }
   .month-nav h1 { min-width: 0; font-size: 16px; }
   .toolbar-actions { margin-left: 0; width: 100%; }
   .toolbar-actions .primary { margin-left: auto; }
-  /* rows fill the screen but grow (the calendar then scrolls) so every
-     transaction of a day stays visible */
-  .grid { grid-auto-rows: minmax(64px, auto); }
+  /* fixed-height day cells (like on desktop): up to 3 transactions, then
+     "+x more"; the calendar scrolls if the rows do not fit the screen */
+  .grid { grid-auto-rows: 128px; }
   .calendar { overflow-y: auto; }
-  .day .items { overflow: visible; flex: 0 0 auto; gap: 2px; }
-  .day .item, .day .item.extra { display: flex; flex-direction: column; }
+  .day .items { overflow: hidden; flex: 1 1 auto; min-height: 0; gap: 2px; }
+  .day .item { display: flex; flex-direction: column; flex-shrink: 0; }
   .day .item .t, .day .item .a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .day .more { display: none; }
+  .day .more { font-size: 8px; line-height: 1.25; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .weekdays div { padding: .2rem .1rem; }
   .calendar { padding: .4rem; }
   .row { flex-direction: column; }
   /* Phones: keep everything in the pixel font at crisp sizes (8px = 1 CSS px
      per font pixel, 16px = 2) instead of the system monospace fallback. */
-  .day .item, .day .bal, label, .summary-grid dt, .cal-list .owner, .cal-list .role, .ctx-menu .ctx-head,
+  .day .item, .day .more, .day .bal, label, .summary-grid dt, .cal-list .owner, .cal-list .role, .ctx-menu .ctx-head,
   #me-name, #day-balance, #balance-day, input, select, textarea {
     font-family: var(--pixel);
     -webkit-font-smoothing: none;
