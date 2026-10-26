@@ -351,6 +351,46 @@ dialog h2 { padding-bottom: .4rem; border-bottom: 2px dashed var(--line); }
   /* 16px inputs also stop iOS Safari from zooming in on focus */
   input, select, textarea, .member-list .role-select { font-size: 16px; }
   .cal-list .owner, .cal-list .role, .ctx-menu .ctx-head, #me-name { font-size: 8px; line-height: 2; }
+
+  /* Compact sidebar: only slightly larger than the calendar (12px pixel font =
+     3 device px per font pixel on 2x phones such as the iPhone SE, so it stays crisp). */
+  .sidebar { width: 216px; padding: .6rem; gap: .75rem; }
+  .sidebar .brand { font-size: 16px; gap: .4rem; padding-left: 2.2rem; min-height: 1.75rem; }
+  .sidebar .brand img { width: 20px; height: 20px; }
+  .side-section { gap: .35rem; }
+  .side-head h2 { font-size: 12px; }
+  .side-head .icon-btn { width: 1.75rem; height: 1.75rem; font-size: 16px; }
+  .cal-list button { padding: .25rem .4rem; }
+  .cal-list .name { font-size: 12px; }
+  .summary-grid { gap: .2rem .5rem; }
+  .summary-grid, .summary-grid dt, .summary-grid dd { font-size: 12px; line-height: 1.25; }
+  .side-foot .btn.small { padding: .2rem .4rem; font-size: 12px; }
+
+  /* Compact "new/edit transaction" and "day" dialogs: the whole form fits on an
+     iPhone SE screen without scrolling. Inputs keep 16px so iOS Safari does not
+     zoom in on focus, but get a tighter box. */
+  #event-dialog, #day-dialog { width: calc(100vw - 1rem); max-height: calc(100% - 1rem); }
+  #event-dialog form, #day-dialog .dialog-body { gap: .45rem; padding: .6rem .7rem; }
+  #event-dialog h2, #day-dialog h2 { font-size: 16px; padding-bottom: .25rem; }
+  #event-dialog label, #day-dialog #day-balance { font-size: 12px; line-height: 1.25; gap: 2px; }
+  #event-dialog input, #event-dialog select, #event-dialog textarea {
+    font-size: 16px; line-height: 1.25; padding: .2rem .4rem; box-shadow: inset 2px 2px 0 var(--panel-2);
+  }
+  #event-dialog textarea { height: 3.4rem; min-height: 2.4rem; }
+  #event-dialog .row { gap: .45rem; }
+  #event-dialog .row.row-pair { flex-direction: row; }
+  #event-dialog .seg { padding: 2px; gap: 2px; }
+  #event-dialog .seg span { font-size: 12px; line-height: 1.25; padding: .25rem; }
+  #event-dialog .btn, #day-dialog .btn { font-size: 12px; line-height: 1.25; padding: .3rem .45rem; }
+  #event-dialog .dialog-actions, #day-dialog .dialog-actions { gap: .4rem; margin-top: 0; }
+  #event-dialog .error { font-size: 12px; margin: 0; }
+  #day-dialog p { margin: 0; }
+  #day-dialog .entry-list { gap: 4px; }
+  #day-dialog .entry-list button {
+    padding: .3rem .45rem; gap: .5rem; font-family: var(--pixel); -webkit-font-smoothing: none;
+    font-size: 12px; line-height: 1.25;
+  }
+  #day-dialog .entry-list .small, #day-dialog .entry-list .amt { font-size: 12px; }
 }
 
 /* ---------- motion: chunky, stepped like an 8-bit game ---------- */
