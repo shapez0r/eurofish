@@ -350,6 +350,14 @@
     if (state.dayOpen) openDay(state.dayOpen, true);
   }
 
+  // Month heading; phones get the short month name so the toolbar stays on one line.
+  function renderMonthTitle() {
+    const el = $("#month-title");
+    if (!el) return;
+    if (!state.calendar) { el.textContent = ""; return; }
+    el.textContent = state.month.toLocaleDateString(undefined, { month: isNarrow() ? "short" : "long", year: "numeric" });
+  }
+
   function renderGrid() {
     $("#weekdays").replaceChildren(...WEEKDAYS.map((d) => h("div", null, d)));
     const todayIso = iso(new Date());
