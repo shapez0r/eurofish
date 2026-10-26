@@ -1,0 +1,586 @@
+// eurofish web UI — dependency-free vanilla JavaScript.
+(() => {
+  "use strict";
+
+  const $ = (sel) => document.querySelector(sel);
+  const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const RECURRENCE_LABEL = {
+    none: "", daily: "daily", weekly: "weekly", biweekly: "every 2 weeks",
+    monthly: "monthly", quarterly: "quarterly", yearly: "yearly",
+  };
+
+  const state = {
+    user: null,
+    calendars: [],
+    calendar: null,
+    month: firstOfMonth(new Date()),
+    ledger: null,
+    events: new Map(),
+    authMode: "login",
+    signupEnabled: false,
+    editing: null, // { event, occurrenceDate }
+    dayOpen: null,
+  };
+
+  // ---------- utilities ----------
+
+  function h(tag, attrs, ...children) {
+    const el = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (v === null || v === undefined || v === false) continue;
+      if (k === "class") el.className = v;
+      else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+      else el.setAttribute(k, v === true ? "" : v);
+    }
+    for (const c of children.flat()) {
+      if (c === null || c === undefined || c === false) continue;
+      el.append(c instanceof Node ? c : document.createTextNode(String(c)));
+    }
+    return el;
+  }
+
+  function pad(n) { return String(n).padStart(2, "0"); }
+  function iso(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
+  function parseISO(s) { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); }
+  function firstOfMonth(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
+  function addDays(d, n) { return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n); }
+
+  function money(cents, opts = {}) {
+    const currency = state.calendar ? state.calendar.currency : "EUR";
+    try {
+      return new Intl.NumberFormat(undefined, { style: "currency", currency, ...opts }).format(cents / 100);
+    } catch {
+      return `${(cents / 100).toFixed(2)} ${currency}`;
+    }
+  }
+
+  // Accepts "1234.5", "1,234.50", "1234,50", "1.234,50" and returns cents or NaN.
+  function parseMoney(raw) {
+    let s = String(raw || "").trim().replace(/[\s\u00a0'€$£]/g, "");
+    if (!s) return NaN;
+    const neg = s.startsWith("-");
+    s = s.replace(/^[-+]/, "");
+    const lastSep = Math.max(s.lastIndexOf("."), s.lastIndexOf(","));
+    let intPart = s, frac = "";
+    if (lastSep >= 0 && s.length - lastSep - 1 <= 2) {
+      intPart = s.slice(0, lastSep);
+      frac = s.slice(lastSep + 1);
+    }
+    intPart = intPart.replace(/[.,]/g, "");
+    if (!/^\d*$/.test(intPart) || !/^\d*$/.test(frac) || (intPart + frac) === "") return NaN;
+    const cents = Number(intPart || "0") * 100 + Number((frac + "00").slice(0, 2));
+    return neg ? -cents : cents;
+  }
+
+  function centsToInput(c) { return (Math.abs(c) / 100).toFixed(2); }
+
+  let toastTimer;
+  function toast(msg) {
+    const t = $("#toast");
+    t.textContent = msg;
+    t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.hidden = true; }, 3000);
+  }
+
+  function showError(el, msg) { el.textContent = msg || ""; el.hidden = !msg; }
+
+  async function api(method, path, body) {
+    const opts = {
+      method,
+      credentials: "same-origin",
+      headers: { "X-Requested-With": "eurofish" },
+    };
+    if (body !== undefined) {
+      opts.headers["Content-Type"] = "application/json";
+      opts.body = JSON.stringify(body);
+    }
+    const res = await fetch(`/api${path}`, opts);
+    if (res.status === 401 && !path.startsWith("/auth/")) {
+      state.user = null;
+      showAuth();
+      throw new Error("Please sign in again.");
+    }
+    if (res.status === 204) return null;
+    let data = null;
+    try { data = await res.json(); } catch { /* empty body */ }
+    if (!res.ok) throw new Error((data && data.error) || `Request failed (${res.status})`);
+    return data;
+  }
+
+  // ---------- auth ----------
+
+  function setAuthMode(mode) {
+    state.authMode = mode;
+    const signup = mode === "signup";
+    $("#tab-login").classList.toggle("active", !signup);
+    $("#tab-signup").classList.toggle("active", signup);
+    $("#tab-login").setAttribute("aria-selected", String(!signup));
+    $("#tab-signup").setAttribute("aria-selected", String(signup));
+    $("#name-field").hidden = !signup;
+    $("#auth-submit").textContent = signup ? "Create account" : "Sign in";
+    $("#auth-form").password.autocomplete = signup ? "new-password" : "current-password";
+    showError($("#auth-error"), "");
+  }
+
+  function showAuth() {
+    $("#app-view").hidden = true;
+    $("#auth-view").hidden = false;
+    $("#tab-signup").hidden = !state.signupEnabled;
+    $("#signup-disabled").hidden = state.signupEnabled;
+    if (!state.signupEnabled) setAuthMode("login");
+    $("#auth-form").email.focus();
+  }
+
+  async function onAuthSubmit(ev) {
+    ev.preventDefault();
+    const f = ev.target;
+    const btn = $("#auth-submit");
+    btn.disabled = true;
+    showError($("#auth-error"), "");
+    try {
+      const body = { email: f.email.value, password: f.password.value };
+      if (state.authMode === "signup") body.display_name = f.display_name.value;
+      if (state.authMode === "signup" && body.password.length < 8) throw new Error("Password must have at least 8 characters.");
+      state.user = await api("POST", `/auth/${state.authMode}`, body);
+      f.reset();
+      await enterApp();
+    } catch (e) {
+      showError($("#auth-error"), e.message);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function logout() {
+    try { await api("POST", "/auth/logout"); } catch { /* ignore */ }
+    state.user = null;
+    state.calendar = null;
+    showAuth();
+  }
+
+  // ---------- app ----------
+
+  async function enterApp() {
+    $("#auth-view").hidden = true;
+    $("#app-view").hidden = false;
+    $("#me-name").textContent = state.user.display_name;
+    await loadCalendars();
+  }
+
+  async function loadCalendars(selectId) {
+    state.calendars = await api("GET", "/calendars");
+    const wanted = selectId || (state.calendar && state.calendar.id) || localStorageGet("calendar");
+    state.calendar = state.calendars.find((c) => c.id === wanted) || state.calendars[0] || null;
+    renderCalendarList();
+    await refresh();
+  }
+
+  function localStorageGet(k) { try { return localStorage.getItem(`eurofish.${k}`); } catch { return null; } }
+  function localStorageSet(k, v) { try { localStorage.setItem(`eurofish.${k}`, v); } catch { /* ignore */ } }
+
+  function renderCalendarList() {
+    const list = $("#calendar-list");
+    list.replaceChildren(...state.calendars.map((c) => h("li", null,
+      h("button", {
+        type: "button",
+        class: state.calendar && c.id === state.calendar.id ? "active" : "",
+        onclick: () => selectCalendar(c.id),
+      }, h("span", null, c.name), c.role !== "owner" ? h("span", { class: "role" }, c.role) : null),
+    )));
+  }
+
+  async function selectCalendar(id) {
+    state.calendar = state.calendars.find((c) => c.id === id) || null;
+    if (state.calendar) localStorageSet("calendar", state.calendar.id);
+    $("#sidebar").classList.remove("open");
+    renderCalendarList();
+    await refresh();
+  }
+
+  function canEdit() { return state.calendar && state.calendar.role !== "viewer"; }
+
+  async function refresh() {
+    const has = !!state.calendar;
+    $("#empty-state").hidden = has;
+    $("#calendar").hidden = !has;
+    for (const id of ["#share-calendar", "#edit-calendar", "#add-event", "#prev-month", "#next-month", "#today"]) {
+      $(id).hidden = !has;
+    }
+    if (!has) {
+      $("#month-title").textContent = "";
+      $("#summary").replaceChildren();
+      return;
+    }
+    $("#add-event").hidden = !canEdit();
+    $("#edit-calendar").hidden = !canEdit();
+    $("#month-title").textContent = state.month.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+
+    const gridStart = addDays(state.month, -((state.month.getDay() + 6) % 7));
+    const gridEnd = addDays(gridStart, 41);
+    const calId = state.calendar.id;
+    const [ledger, events] = await Promise.all([
+      api("GET", `/calendars/${calId}/ledger?from=${iso(gridStart)}&to=${iso(gridEnd)}`),
+      api("GET", `/calendars/${calId}/events`),
+    ]);
+    if (!state.calendar || state.calendar.id !== calId) return; // switched meanwhile
+    state.ledger = ledger;
+    state.calendar = { ...state.calendar, ...ledger.calendar };
+    state.events = new Map(events.map((e) => [e.id, e]));
+    renderGrid();
+    renderSummary();
+    renderCategories();
+    if (state.dayOpen) openDay(state.dayOpen, true);
+  }
+
+  function renderGrid() {
+    $("#weekdays").replaceChildren(...WEEKDAYS.map((d) => h("div", null, d)));
+    const todayIso = iso(new Date());
+    const month = state.month.getMonth();
+    const cells = state.ledger.days.map((day) => {
+      const date = parseISO(day.date);
+      const classes = ["day"];
+      if (date.getMonth() !== month) classes.push("other");
+      if (day.date === todayIso) classes.push("today");
+      if (day.balance < 0) classes.push("negative");
+      if (day.entries.length) classes.push("has-items");
+      const shown = day.entries.slice(0, 3);
+      const label = `${date.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}, ` +
+        `${day.entries.length} transactions, balance ${money(day.balance)}`;
+      return h("button", { type: "button", class: classes.join(" "), "aria-label": label, onclick: () => openDay(day.date) },
+        h("span", { class: "num" }, date.getDate()),
+        h("span", { class: "items" },
+          shown.map((e) => h("span", { class: `item ${e.amount >= 0 ? "inc" : "exp"}`, title: `${e.title} ${money(e.amount)}` },
+            `${e.title} ${money(e.amount, { maximumFractionDigits: 0, minimumFractionDigits: 0 })}`)),
+          day.entries.length > 3 ? h("span", { class: "more" }, `+${day.entries.length - 3} more`) : null),
+        h("span", { class: "bal" }, money(day.balance)));
+    });
+    $("#grid").replaceChildren(...cells);
+  }
+
+  function renderSummary() {
+    const days = state.ledger.days;
+    const month = state.month.getMonth();
+    const idx = days.findIndex((d) => parseISO(d.date).getMonth() === month);
+    const inMonth = days.filter((d) => parseISO(d.date).getMonth() === month);
+    const opening = idx > 0 ? days[idx - 1].balance : state.ledger.opening;
+    let income = 0, expense = 0, lowest = Infinity;
+    for (const d of inMonth) { income += d.income; expense += d.expense; lowest = Math.min(lowest, d.balance); }
+    const closing = inMonth.length ? inMonth[inMonth.length - 1].balance : opening;
+    const row = (label, value, cls) => [h("dt", null, label), h("dd", { class: cls || "" }, value)];
+    $("#summary").replaceChildren(
+      h("div", { class: "side-head" }, h("h2", null, "This month")),
+      h("dl", { class: "summary-grid" },
+        row("Start", money(opening)),
+        row("Income", `+${money(income)}`, "amt inc"),
+        row("Expenses", `−${money(expense)}`, "amt exp"),
+        row("End", money(closing), closing < 0 ? "total amt exp" : "total"),
+        row("Lowest", money(lowest === Infinity ? opening : lowest), lowest < 0 ? "amt exp" : "")),
+    );
+  }
+
+  function renderCategories() {
+    const cats = [...new Set([...state.events.values()].map((e) => e.category).filter(Boolean))].sort();
+    $("#categories").replaceChildren(...cats.map((c) => h("option", { value: c })));
+  }
+
+  // ---------- day dialog ----------
+
+  function openDay(dateIso, keepOpen) {
+    const day = state.ledger && state.ledger.days.find((d) => d.date === dateIso);
+    if (!day) { if (keepOpen) $("#day-dialog").close(); return; }
+    state.dayOpen = dateIso;
+    $("#day-title").textContent = parseISO(dateIso).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+    $("#day-balance").textContent = `End-of-day balance: ${money(day.balance)}`;
+    $("#day-add").hidden = !canEdit();
+    const items = day.entries.map((e) => h("li", null,
+      h("button", { type: "button", onclick: () => openEvent(e.event_id, dateIso) },
+        h("span", null, e.title, e.category ? h("span", { class: "muted small" }, ` · ${e.category}`) : null,
+          e.recurring ? h("span", { class: "muted small" }, " ↻") : null),
+        h("span", { class: `amt ${e.amount >= 0 ? "inc" : "exp"}` }, money(e.amount)))));
+    $("#day-entries").replaceChildren(...(items.length ? items : [h("li", { class: "muted" }, "Nothing planned for this day.")]));
+    const dlg = $("#day-dialog");
+    if (!dlg.open) dlg.showModal();
+  }
+
+  // ---------- event dialog ----------
+
+  function openEvent(eventId, occurrenceDate, newDate) {
+    const f = $("#event-form");
+    f.reset();
+    showError($("#event-error"), "");
+    const ev = eventId ? state.events.get(eventId) : null;
+    state.editing = { event: ev, occurrenceDate };
+    const readOnly = !canEdit();
+    $("#event-dialog-title").textContent = ev ? (readOnly ? "Transaction" : "Edit transaction") : "New transaction";
+    if (ev) {
+      f.kind.value = ev.amount >= 0 ? "income" : "expense";
+      f.title.value = ev.title;
+      f.amount.value = centsToInput(ev.amount);
+      f.category.value = ev.category;
+      f.start_date.value = ev.start_date;
+      f.recurrence.value = ev.recurrence;
+      f.until_date.value = ev.until_date || "";
+      f.note.value = ev.note;
+    } else {
+      f.start_date.value = newDate || iso(new Date());
+      f.recurrence.value = "none";
+    }
+    $("#event-delete").hidden = !ev || readOnly;
+    $("#event-delete").textContent = ev && ev.recurrence !== "none" ? "Delete all repeats" : "Delete";
+    $("#event-skip").hidden = !ev || readOnly || ev.recurrence === "none" || !occurrenceDate;
+    for (const el of f.elements) {
+      if (el.matches("[data-close]")) continue;
+      el.disabled = readOnly && el.type !== "button";
+    }
+    f.querySelector("button[type=submit]").hidden = readOnly;
+    updateUntil();
+    const dlg = $("#event-dialog");
+    if (!dlg.open) dlg.showModal();
+    if (!readOnly) f.title.focus();
+  }
+
+  function updateUntil() {
+    $("#until-field").hidden = $("#event-form").recurrence.value === "none";
+  }
+
+  async function onEventSubmit(ev) {
+    ev.preventDefault();
+    const f = ev.target;
+    const cents = parseMoney(f.amount.value);
+    if (!f.title.value.trim()) return showError($("#event-error"), "Please enter a title.");
+    if (!Number.isFinite(cents) || cents === 0) return showError($("#event-error"), "Please enter an amount, e.g. 49.90");
+    if (!f.start_date.value) return showError($("#event-error"), "Please pick a date.");
+    const body = {
+      title: f.title.value,
+      amount: f.kind.value === "income" ? Math.abs(cents) : -Math.abs(cents),
+      category: f.category.value,
+      note: f.note.value,
+      start_date: f.start_date.value,
+      recurrence: f.recurrence.value,
+      until_date: f.recurrence.value === "none" ? "" : f.until_date.value,
+    };
+    const calId = state.calendar.id;
+    try {
+      const existing = state.editing && state.editing.event;
+      if (existing) await api("PUT", `/calendars/${calId}/events/${existing.id}`, body);
+      else await api("POST", `/calendars/${calId}/events`, body);
+      $("#event-dialog").close();
+      toast("Saved");
+      await refresh();
+    } catch (e) {
+      showError($("#event-error"), e.message);
+    }
+  }
+
+  async function onEventDelete() {
+    const e = state.editing && state.editing.event;
+    if (!e) return;
+    const msg = e.recurrence !== "none" ? `Delete "${e.title}" and all its repeats?` : `Delete "${e.title}"?`;
+    if (!confirm(msg)) return;
+    try {
+      await api("DELETE", `/calendars/${state.calendar.id}/events/${e.id}`);
+      $("#event-dialog").close();
+      toast("Deleted");
+      await refresh();
+    } catch (err) {
+      showError($("#event-error"), err.message);
+    }
+  }
+
+  async function onEventSkip() {
+    const { event: e, occurrenceDate } = state.editing || {};
+    if (!e || !occurrenceDate) return;
+    try {
+      await api("POST", `/calendars/${state.calendar.id}/events/${e.id}/skip`, { date: occurrenceDate });
+      $("#event-dialog").close();
+      toast("Removed from this day");
+      await refresh();
+    } catch (err) {
+      showError($("#event-error"), err.message);
+    }
+  }
+
+  // ---------- calendar dialog ----------
+
+  function openCalendarDialog(edit) {
+    const f = $("#calendar-form");
+    f.reset();
+    showError($("#calendar-error"), "");
+    const c = edit ? state.calendar : null;
+    $("#calendar-dialog-title").textContent = c ? "Calendar settings" : "New calendar";
+    f.name.value = c ? c.name : (state.calendars.length ? "" : "Household");
+    f.currency.value = c ? c.currency : "EUR";
+    f.start_balance.value = c ? (c.start_balance / 100).toFixed(2) : "";
+    f.start_date.value = c ? c.start_date : iso(new Date());
+    $("#calendar-delete").hidden = !c || c.role !== "owner";
+    f.dataset.mode = c ? "edit" : "create";
+    $("#calendar-dialog").showModal();
+    f.name.focus();
+  }
+
+  async function onCalendarSubmit(ev) {
+    ev.preventDefault();
+    const f = ev.target;
+    const bal = f.start_balance.value.trim() === "" ? 0 : parseMoney(f.start_balance.value);
+    if (!Number.isFinite(bal)) return showError($("#calendar-error"), "Starting balance is not a valid amount.");
+    const body = {
+      name: f.name.value,
+      currency: f.currency.value.trim().toUpperCase(),
+      start_balance: bal,
+      start_date: f.start_date.value,
+    };
+    try {
+      let cal;
+      if (f.dataset.mode === "edit") cal = await api("PATCH", `/calendars/${state.calendar.id}`, body);
+      else cal = await api("POST", "/calendars", body);
+      $("#calendar-dialog").close();
+      localStorageSet("calendar", cal.id);
+      await loadCalendars(cal.id);
+    } catch (e) {
+      showError($("#calendar-error"), e.message);
+    }
+  }
+
+  async function onCalendarDelete() {
+    if (!state.calendar) return;
+    if (!confirm(`Delete "${state.calendar.name}" and all its transactions for everyone? This cannot be undone.`)) return;
+    try {
+      await api("DELETE", `/calendars/${state.calendar.id}`);
+      $("#calendar-dialog").close();
+      state.calendar = null;
+      await loadCalendars();
+    } catch (e) {
+      showError($("#calendar-error"), e.message);
+    }
+  }
+
+  // ---------- share dialog ----------
+
+  async function openShare() {
+    showError($("#share-error"), "");
+    $("#share-form").reset();
+    const owner = state.calendar.role === "owner";
+    $("#share-add").hidden = !owner;
+    $("#share-submit").hidden = !owner;
+    $("#member-list").replaceChildren(h("li", { class: "muted" }, "Loading…"));
+    $("#share-dialog").showModal();
+    await renderMembers();
+  }
+
+  async function renderMembers() {
+    const owner = state.calendar.role === "owner";
+    try {
+      const members = await api("GET", `/calendars/${state.calendar.id}/members`);
+      $("#member-list").replaceChildren(...members.map((m) => {
+        const self = m.user_id === state.user.id;
+        const canRemove = m.role !== "owner" && (owner || self);
+        return h("li", null,
+          h("div", { class: "who" }, h("span", null, m.display_name + (self ? " (you)" : "")), h("span", { class: "muted small" }, m.email)),
+          h("span", { class: "muted small" }, m.role),
+          canRemove ? h("button", { type: "button", class: "btn ghost small danger", onclick: () => removeMember(m, self) }, self ? "Leave" : "Remove") : null);
+      }));
+    } catch (e) {
+      showError($("#share-error"), e.message);
+    }
+  }
+
+  async function removeMember(m, self) {
+    if (!confirm(self ? "Leave this calendar?" : `Remove ${m.display_name}?`)) return;
+    try {
+      await api("DELETE", `/calendars/${state.calendar.id}/members/${m.user_id}`);
+      if (self) {
+        $("#share-dialog").close();
+        state.calendar = null;
+        await loadCalendars();
+      } else {
+        await renderMembers();
+      }
+    } catch (e) {
+      showError($("#share-error"), e.message);
+    }
+  }
+
+  async function onShareSubmit(ev) {
+    ev.preventDefault();
+    const f = ev.target;
+    showError($("#share-error"), "");
+    try {
+      await api("POST", `/calendars/${state.calendar.id}/members`, { email: f.email.value, role: f.role.value });
+      f.email.value = "";
+      toast("Access granted");
+      await renderMembers();
+    } catch (e) {
+      showError($("#share-error"), e.message);
+    }
+  }
+
+  // ---------- wiring ----------
+
+  function changeMonth(delta) {
+    state.month = new Date(state.month.getFullYear(), state.month.getMonth() + delta, 1);
+    state.dayOpen = null;
+    refresh().catch((e) => toast(e.message));
+  }
+
+  function wire() {
+    $("#tab-login").addEventListener("click", () => setAuthMode("login"));
+    $("#tab-signup").addEventListener("click", () => setAuthMode("signup"));
+    $("#auth-form").addEventListener("submit", onAuthSubmit);
+    $("#logout").addEventListener("click", logout);
+
+    $("#prev-month").addEventListener("click", () => changeMonth(-1));
+    $("#next-month").addEventListener("click", () => changeMonth(1));
+    $("#today").addEventListener("click", () => { state.month = firstOfMonth(new Date()); changeMonth(0); });
+    $("#menu-toggle").addEventListener("click", () => $("#sidebar").classList.toggle("open"));
+
+    $("#new-calendar").addEventListener("click", () => openCalendarDialog(false));
+    $("#empty-create").addEventListener("click", () => openCalendarDialog(false));
+    $("#edit-calendar").addEventListener("click", () => openCalendarDialog(true));
+    $("#calendar-form").addEventListener("submit", onCalendarSubmit);
+    $("#calendar-delete").addEventListener("click", onCalendarDelete);
+
+    $("#share-calendar").addEventListener("click", () => openShare().catch((e) => toast(e.message)));
+    $("#share-form").addEventListener("submit", onShareSubmit);
+
+    $("#add-event").addEventListener("click", () => openEvent(null, null, iso(new Date())));
+    $("#day-add").addEventListener("click", () => openEvent(null, null, state.dayOpen));
+    $("#event-form").addEventListener("submit", onEventSubmit);
+    $("#event-form").recurrence.addEventListener("change", updateUntil);
+    $("#event-delete").addEventListener("click", onEventDelete);
+    $("#event-skip").addEventListener("click", onEventSkip);
+    $("#day-dialog").addEventListener("close", () => { state.dayOpen = null; });
+
+    document.querySelectorAll("[data-close]").forEach((b) =>
+      b.addEventListener("click", () => b.closest("dialog").close()));
+    // Close dialogs when clicking on the backdrop.
+    document.querySelectorAll("dialog").forEach((d) => d.addEventListener("click", (e) => {
+      if (e.target === d) d.close();
+    }));
+
+    document.addEventListener("keydown", (e) => {
+      if (e.target.closest("input, textarea, select, dialog") || $("#app-view").hidden || !state.calendar) return;
+      if (e.key === "ArrowLeft") changeMonth(-1);
+      if (e.key === "ArrowRight") changeMonth(1);
+    });
+  }
+
+  async function boot() {
+    wire();
+    try {
+      const cfg = await api("GET", "/config");
+      state.signupEnabled = !!cfg.signup_enabled;
+    } catch { state.signupEnabled = false; }
+    try {
+      state.user = await api("GET", "/me");
+    } catch { state.user = null; }
+    if (state.user) {
+      try { await enterApp(); } catch (e) { toast(e.message); }
+    } else {
+      setAuthMode("login");
+      showAuth();
+    }
+  }
+
+  boot();
+})();

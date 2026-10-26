@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>eurofish — calendar budgeting</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="app.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <!-- Sign in / sign up -->
+  <main id="auth-view" class="auth" hidden>
+    <div class="auth-card">
+      <div class="brand brand-lg"><img src="favicon.svg" alt="" width="40" height="40"><span>eurofish</span></div>
+      <p class="muted">Plan income and expenses on a calendar and see your balance for every day ahead.</p>
+      <div class="tabs" role="tablist">
+        <button type="button" role="tab" id="tab-login" class="tab active" aria-selected="true">Sign in</button>
+        <button type="button" role="tab" id="tab-signup" class="tab" aria-selected="false">Create account</button>
+      </div>
+      <form id="auth-form" novalidate>
+        <label id="name-field" hidden>Display name
+          <input name="display_name" autocomplete="nickname" maxlength="100">
+        </label>
+        <label>E-mail
+          <input name="email" type="email" autocomplete="email" required>
+        </label>
+        <label>Password
+          <input name="password" type="password" autocomplete="current-password" minlength="8" maxlength="72" required>
+        </label>
+        <p id="auth-error" class="error" role="alert" hidden></p>
+        <button type="submit" class="btn primary wide" id="auth-submit">Sign in</button>
+      </form>
+      <p id="signup-disabled" class="muted small" hidden>Account creation is disabled on this server or for your network.</p>
+    </div>
+  </main>
+
+  <!-- Application -->
+  <div id="app-view" class="app" hidden>
+    <aside class="sidebar" id="sidebar">
+      <div class="brand"><img src="favicon.svg" alt="" width="28" height="28"><span>eurofish</span></div>
+      <div class="side-section">
+        <div class="side-head">
+          <h2>Calendars</h2>
+          <button type="button" class="icon-btn" id="new-calendar" title="New calendar" aria-label="New calendar">+</button>
+        </div>
+        <ul id="calendar-list" class="cal-list"></ul>
+      </div>
+      <div class="side-section" id="summary"></div>
+      <div class="side-foot">
+        <span id="me-name" class="muted small"></span>
+        <button type="button" class="btn ghost small" id="logout">Sign out</button>
+      </div>
+    </aside>
+
+    <section class="main">
+      <header class="toolbar">
+        <button type="button" class="icon-btn menu-btn" id="menu-toggle" aria-label="Toggle sidebar">&#9776;</button>
+        <div class="month-nav">
+          <button type="button" class="icon-btn" id="prev-month" aria-label="Previous month">&#8249;</button>
+          <h1 id="month-title"></h1>
+          <button type="button" class="icon-btn" id="next-month" aria-label="Next month">&#8250;</button>
+          <button type="button" class="btn ghost small" id="today">Today</button>
+        </div>
+        <div class="toolbar-actions">
+          <button type="button" class="btn ghost small" id="share-calendar">Share</button>
+          <button type="button" class="btn ghost small" id="edit-calendar">Settings</button>
+          <button type="button" class="btn primary small" id="add-event">+ Transaction</button>
+        </div>
+      </header>
+      <div id="empty-state" class="empty" hidden>
+        <h2>Create your first calendar</h2>
+        <p class="muted">A calendar holds a starting balance and the money that comes in and goes out.</p>
+        <button type="button" class="btn primary" id="empty-create">Create calendar</button>
+      </div>
+      <div id="calendar" class="calendar" aria-live="polite">
+        <div class="weekdays" id="weekdays"></div>
+        <div class="grid" id="grid"></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Transaction dialog -->
+  <dialog id="event-dialog">
+    <form id="event-form" method="dialog" novalidate>
+      <h2 id="event-dialog-title">New transaction</h2>
+      <div class="seg" role="radiogroup" aria-label="Type">
+        <label><input type="radio" name="kind" value="expense" checked><span>Expense</span></label>
+        <label><input type="radio" name="kind" value="income"><span>Income</span></label>
+      </div>
+      <label>Title <input name="title" maxlength="200" required></label>
+      <div class="row">
+        <label>Amount <input name="amount" inputmode="decimal" placeholder="0.00" required></label>
+        <label>Category <input name="category" maxlength="64" list="categories"></label>
+      </div>
+      <datalist id="categories"></datalist>
+      <div class="row">
+        <label>Date <input name="start_date" type="date" required></label>
+        <label>Repeat
+          <select name="recurrence">
+            <option value="none">Never</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="biweekly">Every 2 weeks</option>
+            <option value="monthly">Monthly</option>
+            <option value="quarterly">Quarterly</option>
+            <option value="yearly">Yearly</option>
+          </select>
+        </label>
+      </div>
+      <label id="until-field">Repeat until (optional) <input name="until_date" type="date"></label>
+      <label>Note <textarea name="note" rows="2" maxlength="2000"></textarea></label>
+      <p id="event-error" class="error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn danger ghost" id="event-delete" hidden>Delete</button>
+        <button type="button" class="btn ghost" id="event-skip" hidden>Remove this day only</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn ghost" data-close>Cancel</button>
+        <button type="submit" class="btn primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Day dialog -->
+  <dialog id="day-dialog">
+    <div class="dialog-body">
+      <h2 id="day-title"></h2>
+      <p id="day-balance" class="muted"></p>
+      <ul id="day-entries" class="entry-list"></ul>
+      <div class="dialog-actions">
+        <span class="spacer"></span>
+        <button type="button" class="btn ghost" data-close>Close</button>
+        <button type="button" class="btn primary" id="day-add">+ Transaction</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Calendar settings dialog -->
+  <dialog id="calendar-dialog">
+    <form id="calendar-form" method="dialog" novalidate>
+      <h2 id="calendar-dialog-title">New calendar</h2>
+      <label>Name <input name="name" maxlength="100" required></label>
+      <div class="row">
+        <label>Currency <input name="currency" maxlength="3" value="EUR" required></label>
+        <label>Starting balance <input name="start_balance" inputmode="decimal" placeholder="0.00"></label>
+      </div>
+      <label>Balance date <input name="start_date" type="date" required></label>
+      <p class="muted small">The starting balance is what you have on the balance date. Everything after it adds up from there.</p>
+      <p id="calendar-error" class="error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn danger ghost" id="calendar-delete" hidden>Delete calendar</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn ghost" data-close>Cancel</button>
+        <button type="submit" class="btn primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Share dialog -->
+  <dialog id="share-dialog">
+    <form id="share-form" method="dialog" novalidate>
+      <h2>Share calendar</h2>
+      <p class="muted small">People need a eurofish account on this server first.</p>
+      <ul id="member-list" class="member-list"></ul>
+      <div id="share-add" class="row">
+        <label>E-mail <input name="email" type="email" required></label>
+        <label>Access
+          <select name="role">
+            <option value="editor">Can edit</option>
+            <option value="viewer">Can view</option>
+          </select>
+        </label>
+      </div>
+      <p id="share-error" class="error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <span class="spacer"></span>
+        <button type="button" class="btn ghost" data-close>Close</button>
+        <button type="submit" class="btn primary" id="share-submit">Add person</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>
