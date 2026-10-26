@@ -7,23 +7,26 @@
   font-display: swap;
 }
 
+/* Cyberpunk palette: cool lab-white (light) and neon night (dark),
+   cyan accent, neon-magenta hard drop shadows. */
 :root {
-  --bg: #e9e4d4;
-  --bg-dot: #e2dcc9;
-  --panel: #fbf8ef;
-  --panel-2: #efe9d8;
-  --text: #1f1d2b;
-  --muted: #6b6577;
-  --line: #c9c0a8;
-  --edge: #1f1d2b;          /* pixel outlines */
-  --drop: #1f1d2b;          /* hard pixel drop shadows */
-  --accent: #1e88b4;
+  --bg: #e4e9f4;
+  --bg-dot: #d2daec;        /* grid lines */
+  --panel: #f6f8ff;
+  --panel-2: #e2e7f6;
+  --text: #0c0f2e;
+  --muted: #545c86;
+  --line: #b3bcdb;
+  --edge: #12163f;          /* pixel outlines */
+  --drop: #e3168f;          /* hard pixel drop shadows */
+  --accent: #0088b0;
   --accent-text: #ffffff;
-  --income: #2b8a3e;
-  --expense: #c0392b;
-  --neg-bg: #f7dcd5;
-  --neg-dot: #efc9bf;
-  --today: #d3ecf7;
+  --income: #008a55;
+  --expense: #d90f5a;
+  --neg-bg: #fbdbe8;
+  --neg-dot: #f3c2d7;
+  --today: #c9f1fb;
+  --glow: #00b8d9;          /* secondary neon (titles, scanlines) */
   --shadow: 6px 6px 0 var(--drop);
   --shadow-sm: 3px 3px 0 var(--drop);
   --radius: 0;
@@ -34,31 +37,36 @@
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #14121c;
-    --bg-dot: #181523;
-    --panel: #1f1c2b;
-    --panel-2: #2a2639;
-    --text: #ece6d6;
-    --muted: #9c94ad;
-    --line: #3b3550;
-    --edge: #8a80a8;
-    --drop: #000000;
-    --accent: #41b6e6;
-    --accent-text: #0b1620;
-    --income: #5fd38d;
-    --expense: #ff7a6b;
-    --neg-bg: #3a1f22;
-    --neg-dot: #44242a;
-    --today: #173a4d;
+    --bg: #07080f;
+    --bg-dot: #10142a;
+    --panel: #0e1120;
+    --panel-2: #171b33;
+    --text: #d9f7ff;
+    --muted: #7d89b8;
+    --line: #262d52;
+    --edge: #5468ff;
+    --drop: #ff2e97;
+    --accent: #00f0ff;
+    --accent-text: #05060c;
+    --income: #39ff8f;
+    --expense: #ff3d6e;
+    --neg-bg: #22071a;
+    --neg-dot: #380b29;
+    --today: #08283a;
+    --glow: #ff2e97;
   }
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
+/* iOS Safari inflates text in landscape, which breaks the 8px pixel grid. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body {
   color: var(--text);
   background-color: var(--bg);
-  /* subtle 8px checkerboard, like an old game menu */
-  background-image: repeating-conic-gradient(var(--bg-dot) 0 25%, transparent 0 50%);
+  /* 16px sci-fi grid, like a terminal HUD */
+  background-image:
+    linear-gradient(var(--bg-dot) 2px, transparent 2px),
+    linear-gradient(90deg, var(--bg-dot) 2px, transparent 2px);
   background-size: 16px 16px;
   scrollbar-color: var(--edge) var(--panel-2);
 }
@@ -127,6 +135,7 @@ textarea { resize: vertical; }
 }
 .auth-card form { display: flex; flex-direction: column; gap: .8rem; }
 .brand { display: flex; align-items: center; gap: .6rem; font-size: 24px; line-height: 1; }
+.brand span { text-shadow: 2px 2px 0 var(--glow); }
 .brand-lg { font-size: 32px; }
 .tabs { display: flex; background: var(--panel-2); border: 2px solid var(--edge); padding: 3px; gap: 3px; }
 .tab { flex: 1; border: 0; background: transparent; color: var(--muted); padding: .45rem; border-radius: 0; font-size: 16px; cursor: pointer; }
@@ -195,8 +204,8 @@ textarea { resize: vertical; }
 .day.negative .bal { color: var(--expense); }
 .day.negative {
   background-color: var(--neg-bg);
-  background-image: repeating-conic-gradient(var(--neg-dot) 0 25%, transparent 0 50%);
-  background-size: 4px 4px;
+  /* hazard stripes */
+  background-image: repeating-linear-gradient(-45deg, var(--neg-dot) 0 4px, transparent 4px 8px);
 }
 .day .num { font-size: 16px; line-height: 1.25; align-self: flex-start; }
 .day .items { display: flex; flex-direction: column; gap: 1px; flex: 1; min-height: 0; overflow: hidden; }
@@ -233,9 +242,9 @@ dialog {
   background: var(--panel); color: var(--text); box-shadow: var(--shadow);
 }
 dialog::backdrop {
-  background-color: rgba(8, 10, 20, .35);
-  background-image: repeating-conic-gradient(rgba(8, 10, 20, .3) 0 25%, transparent 0 50%);
-  background-size: 4px 4px;
+  background-color: rgba(4, 6, 18, .45);
+  /* CRT scanlines */
+  background-image: repeating-linear-gradient(rgba(4, 6, 18, .45) 0 2px, transparent 2px 4px);
 }
 dialog form, .dialog-body { display: flex; flex-direction: column; gap: .8rem; padding: 1.3rem; }
 dialog h2 { padding-bottom: .4rem; border-bottom: 2px dashed var(--line); }
@@ -271,19 +280,19 @@ dialog h2 { padding-bottom: .4rem; border-bottom: 2px dashed var(--line); }
   font-size: 16px; z-index: 10; max-width: calc(100vw - 2rem);
 }
 
-/* medium screens: day balances fall back to the compact text font */
-@media (max-width: 1100px) {
-  .day .bal { font-family: var(--mono); font-size: .8rem; -webkit-font-smoothing: auto; }
-}
+/* medium screens: day balances stay in the pixel font; app.js shortens them
+   (compact notation) so they fit the narrower cells. */
 
 /* small screens */
 @media (max-width: 820px) {
   .menu-btn { display: inline-grid; }
   .sidebar {
     position: fixed; inset: 0 auto 0 0; z-index: 5; transform: translateX(-100%);
-    transition: transform .2s steps(5, end); box-shadow: var(--shadow);
+    transition: transform .2s steps(5, end); box-shadow: none;
   }
   .sidebar.open { transform: none; }
+  /* the hard shadow only while visible, so it does not peek in at the screen edge */
+  .sidebar.open, .sidebar.dragging { box-shadow: var(--shadow); }
   .month-nav h1 { min-width: 0; font-size: 16px; }
   .toolbar-actions { margin-left: 0; width: 100%; }
   .toolbar-actions .primary { margin-left: auto; }
@@ -295,6 +304,20 @@ dialog h2 { padding-bottom: .4rem; border-bottom: 2px dashed var(--line); }
   .weekdays div { padding: .2rem .1rem; }
   .calendar { padding: .4rem; }
   .row { flex-direction: column; }
+  /* Phones: keep everything in the pixel font at crisp sizes (8px = 1 CSS px
+     per font pixel, 16px = 2) instead of the system monospace fallback. */
+  .day .bal, label, .summary-grid dt, .cal-list .owner, .cal-list .role, .ctx-menu .ctx-head,
+  #me-name, #day-balance, #balance-day, input, select, textarea {
+    font-family: var(--pixel);
+    -webkit-font-smoothing: none;
+    font-weight: normal;
+  }
+  .day { padding: .2rem; }
+  .day .bal { font-size: 8px; line-height: 2; }
+  label, .summary-grid, .summary-grid dt, #day-balance, #balance-day { font-size: 16px; line-height: 1.25; }
+  /* 16px inputs also stop iOS Safari from zooming in on focus */
+  input, select, textarea, .member-list .role-select { font-size: 16px; }
+  .cal-list .owner, .cal-list .role, .ctx-menu .ctx-head, #me-name { font-size: 8px; line-height: 2; }
 }
 
 /* ---------- motion: chunky, stepped like an 8-bit game ---------- */

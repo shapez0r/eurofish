@@ -54,11 +54,35 @@
     const currency = state.calendar ? state.calendar.currency : "EUR";
     const whole = cents % 100 === 0 ? { minimumFractionDigits: 0 } : {};
     try {
-      return new Intl.NumberFormat(undefined, { style: "currency", currency, ...whole, ...opts }).format(cents / 100);
+      return pixelSafe(new Intl.NumberFormat(undefined, { style: "currency", currency, ...whole, ...opts }).format(cents / 100));
     } catch {
       return `${plainAmount(cents)} ${currency}`;
     }
   }
+  // Some locales (and iOS Safari) format with thin/narrow spaces that the pixel
+  // font does not have; they would be drawn in a fallback system font.
+  function pixelSafe(s) { return s.replace(/[\u2007\u2009\u202f]/g, "\u00a0"); }
+
+  // Day cells are narrow on tablets and phones: there the balance is shown
+  // compactly (e.g. "€1.2k", "€850") so it fits in the pixel font.
+  const compactCells = window.matchMedia ? window.matchMedia("(max-width: 1100px)") : null;
+  function cellMoney(cents) {
+    if (!compactCells || !compactCells.matches) return money(cents);
+    const abs = Math.abs(cents) / 100;
+    if (abs < 1000) return money(cents, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    const [div, suffix] = Math.round(abs / 100) >= 10000 ? [1e6, "M"] : [1e3, "k"];
+    try {
+      const currency = state.calendar ? state.calendar.currency : "EUR";
+      const parts = new Intl.NumberFormat(undefined, { style: "currency", currency, minimumFractionDigits: 0, maximumFractionDigits: 1 })
+        .formatToParts(cents / 100 / div);
+      let last = -1;
+      parts.forEach((p, i) => { if (p.type === "integer" || p.type === "fraction") last = i; });
+      return pixelSafe(parts.map((p, i) => (i === last ? p.value + suffix : p.value)).join(""));
+    } catch {
+      return money(cents);
+    }
+  }
+
   // Plain number for input fields, e.g. "1250" or "49.90".
   function plainAmount(cents) {
     return cents % 100 === 0 ? String(cents / 100) : (cents / 100).toFixed(2);
@@ -329,7 +353,7 @@
           shown.map((e) => h("span", { class: `item ${e.amount >= 0 ? "inc" : "exp"}`, title: `${e.title} ${money(e.amount)}` },
             `${e.title} ${money(e.amount, { maximumFractionDigits: 0, minimumFractionDigits: 0 })}`)),
           day.entries.length > 3 ? h("span", { class: "more" }, `+${day.entries.length - 3} more`) : null),
-        h("span", { class: "bal", title: classes.includes("override") ? "Balance set manually" : null }, money(day.balance)));
+        h("span", { class: "bal", title: classes.includes("override") ? "Balance set manually" : null }, cellMoney(day.balance)));
     });
     const grid = $("#grid");
     grid.replaceChildren(...cells);
@@ -833,6 +857,12 @@
 
     document.querySelectorAll("dialog").forEach(enhanceDialog);
     wireSwipes();
+    // Re-render the day balances when crossing the compact-cell breakpoint.
+    if (compactCells) {
+      const onCompact = () => { if (state.ledger && state.calendar) renderGrid(); };
+      if (compactCells.addEventListener) compactCells.addEventListener("change", onCompact);
+      else if (compactCells.addListener) compactCells.addListener(onCompact);
+    }
     document.querySelectorAll("[data-close]").forEach((b) =>
       b.addEventListener("click", () => b.closest("dialog").close()));
     // Close dialogs when clicking on the backdrop.
