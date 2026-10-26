@@ -51,6 +51,8 @@ identical on SQLite and MariaDB.
 - `sessions` — SHA-256 hash of the opaque session token, expiry
 - `calendars` — name, currency, balance date, starting balance, `version`
 - `calendar_members` — `(calendar, user, role)` with role `owner|editor|viewer`
+- `calendar_invites` — `(calendar, e-mail, role)` shares for people without an
+  account yet; turned into `calendar_members` rows when they sign up
 - `events` — title, amount, category, note, start date, recurrence, optional end date
 - `event_skips` — single occurrences removed from a repeating event
 - `balance_overrides` — (calendar, date) → manually set end-of-day balance
@@ -70,7 +72,10 @@ day of shorter months. `monthly_day` repeats on the exact day number and skips
 months that do not have it; `monthly_nth` repeats on the same weekday occurrence
 as the start date (e.g. first Monday; a start on day 29–31 means the last one).
 A balance override sets a day's end-of-day balance after its transactions; the
-following days continue from it. The ledger endpoint caches its result under a key that
+following days continue from it. Overrides may also be dated before the
+balance date: the balance then runs from the earliest override and is set to
+the starting balance again on the balance date (the latest known balance wins;
+the jump is reported as `start_adjustment`). The ledger endpoint caches its result under a key that
 includes the calendar's `version`, which is incremented in the same
 transaction as every write — caches are never stale and need no explicit
 invalidation, on one node or many.
@@ -118,8 +123,11 @@ All endpoints are JSON under `/api`. Errors are `{"error": "message"}`.
 | GET | `/me` | current user |
 | GET / POST | `/calendars` | list / create `{name, currency, start_date, start_balance}` |
 | GET / PATCH / DELETE | `/calendars/:id` | delete is owner-only |
-| GET / POST | `/calendars/:id/members` | add `{email, role: editor\|viewer}` (owner) |
+| GET / POST | `/calendars/:id/members` | add `{email, role: editor\|viewer}` (owner); unknown e-mails become a pending invite (202) |
+| PATCH | `/calendars/:id/members/:userId` | change `{role: editor\|viewer}` (owner) |
 | DELETE | `/calendars/:id/members/:userId` | owner removes, member leaves |
+| GET | `/calendars/:id/invites` | pending shares for e-mails without an account |
+| DELETE | `/calendars/:id/invites/:email` | cancel a pending share (owner) |
 | GET / POST | `/calendars/:id/events` | `{title, amount, category, note, start_date, recurrence, until_date}` |
 | PUT / DELETE | `/calendars/:id/events/:eventId` | edit / delete the whole series |
 | POST | `/calendars/:id/events/:eventId/skip` | `{date}` removes one occurrence |

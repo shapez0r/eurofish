@@ -97,7 +97,10 @@ func New(cfg *config.Config, database *db.DB, c cache.Cache, log *slog.Logger, v
 
 	priv.Get("/calendars/:id/members", s.listMembers)
 	priv.Post("/calendars/:id/members", s.addMember)
+	priv.Patch("/calendars/:id/members/:userId", s.updateMember)
 	priv.Delete("/calendars/:id/members/:userId", s.removeMember)
+	priv.Get("/calendars/:id/invites", s.listInvites)
+	priv.Delete("/calendars/:id/invites/:email", s.deleteInvite)
 
 	priv.Get("/calendars/:id/events", s.listEvents)
 	priv.Post("/calendars/:id/events", s.createEvent)

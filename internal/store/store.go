@@ -284,6 +284,137 @@ func (s *Store) RemoveMember(ctx context.Context, calendarID, userID string) err
 	return nil
 }
 
+// UpdateMemberRole changes the role of a (non-owner) member.
+func (s *Store) UpdateMemberRole(ctx context.Context, calendarID, userID, role string) error {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE calendar_members SET role = ? WHERE calendar_id = ? AND user_id = ? AND role <> ?`,
+		role, calendarID, userID, RoleOwner)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		// MariaDB reports 0 affected rows when nothing changed; double-check existence.
+		var c int
+		if err := s.db.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM calendar_members WHERE calendar_id = ? AND user_id = ? AND role <> ?`,
+			calendarID, userID, RoleOwner).Scan(&c); err != nil {
+			return err
+		}
+		if c == 0 {
+			return ErrNotFound
+		}
+	}
+	return nil
+}
+
+// ---------- invites (shares for people without an account yet) ----------
+
+// Invite is a pending share for an e-mail address that has no account yet.
+type Invite struct {
+	Email     string `json:"email"`
+	Role      string `json:"role"`
+	CreatedAt int64  `json:"created_at"`
+}
+
+func (s *Store) ListInvites(ctx context.Context, calendarID string) ([]Invite, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT email, role, created_at FROM calendar_invites WHERE calendar_id = ? ORDER BY created_at, email`, calendarID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Invite{}
+	for rows.Next() {
+		var i Invite
+		if err := rows.Scan(&i.Email, &i.Role, &i.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, i)
+	}
+	return out, rows.Err()
+}
+
+// SetInvite creates or replaces the pending share of an e-mail address.
+func (s *Store) SetInvite(ctx context.Context, calendarID, email, role, invitedBy string) (*Invite, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM calendar_invites WHERE calendar_id = ? AND email = ?`, calendarID, email); err != nil {
+		return nil, err
+	}
+	inv := &Invite{Email: email, Role: role, CreatedAt: time.Now().Unix()}
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO calendar_invites (calendar_id, email, role, invited_by, created_at) VALUES (?, ?, ?, ?, ?)`,
+		calendarID, email, role, invitedBy, inv.CreatedAt); err != nil {
+		return nil, err
+	}
+	return inv, tx.Commit()
+}
+
+func (s *Store) DeleteInvite(ctx context.Context, calendarID, email string) error {
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM calendar_invites WHERE calendar_id = ? AND email = ?`, calendarID, email)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// AcceptInvites turns all pending shares for the user's e-mail address into
+// memberships. It is called when an account is created.
+func (s *Store) AcceptInvites(ctx context.Context, userID, email string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	rows, err := tx.QueryContext(ctx,
+		`SELECT calendar_id, role FROM calendar_invites WHERE email = ?`, email)
+	if err != nil {
+		return err
+	}
+	type pending struct{ calendarID, role string }
+	var list []pending
+	for rows.Next() {
+		var p pending
+		if err := rows.Scan(&p.calendarID, &p.role); err != nil {
+			rows.Close()
+			return err
+		}
+		list = append(list, p)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	now := time.Now().Unix()
+	for _, p := range list {
+		var n int
+		if err := tx.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM calendar_members WHERE calendar_id = ? AND user_id = ?`, p.calendarID, userID).Scan(&n); err != nil {
+			return err
+		}
+		if n == 0 {
+			if _, err := tx.ExecContext(ctx,
+				`INSERT INTO calendar_members (calendar_id, user_id, role, created_at) VALUES (?, ?, ?, ?)`,
+				p.calendarID, userID, p.role, now); err != nil {
+				return err
+			}
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM calendar_invites WHERE email = ?`, email); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // ---------- events ----------
 
 func (s *Store) ListEvents(ctx context.Context, calendarID string) ([]Event, error) {

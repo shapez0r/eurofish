@@ -196,6 +196,10 @@ type Day struct {
 	Override *int64 `json:"override,omitempty"`
 	// Adjustment is how much the override moved the balance (override - computed).
 	Adjustment int64 `json:"adjustment"`
+	// StartAdjustment is how much the calendar's starting balance moved the
+	// balance at the start of the balance date, when a balance set on an
+	// earlier day led up to it (starting balance - computed opening).
+	StartAdjustment int64 `json:"start_adjustment,omitempty"`
 }
 
 type Ledger struct {
@@ -206,7 +210,8 @@ type Ledger struct {
 	Income  int64  `json:"income"`
 	Expense int64  `json:"expense"`
 	Lowest  int64  `json:"lowest"`
-	// Adjustment is the sum of all balance-override adjustments in the window.
+	// Adjustment is the sum of all balance-override (and starting-balance)
+	// adjustments in the window.
 	Adjustment int64 `json:"adjustment"`
 	Days       []Day `json:"days"`
 }
@@ -221,39 +226,79 @@ func BuildLedger(calStart time.Time, startBalance int64, series []Series, from, 
 // BuildLedgerWithOverrides is BuildLedger plus manual balance overrides:
 // overrides maps a date (YYYY-MM-DD) to the end-of-day balance of that day.
 // After the day's transactions are applied the balance is set to the
-// override and the following days continue from there. Overrides dated
-// before calStart are ignored.
+// override and the following days continue from there.
+//
+// Overrides may also be dated before calStart. The balance then runs from
+// the earliest override, and at the start of calStart it is set to
+// startBalance again (the latest known balance always wins). Days before the
+// first known balance (calStart or the earliest override) show the opening
+// balance of that first day and are not moved by transactions.
 func BuildLedgerWithOverrides(calStart time.Time, startBalance int64, series []Series, from, to time.Time, overrides map[string]int64) Ledger {
 	l := Ledger{From: from.Format(DateLayout), To: to.Format(DateLayout)}
 
-	balance := startBalance
-	if from.After(calStart) {
-		dayBefore := from.AddDate(0, 0, -1)
-		sumFrom := calStart
-		// Continue from the latest override before the window, if there is one.
-		var anchor time.Time
-		for k, v := range overrides {
-			t, err := ParseDate(k)
-			if err != nil || t.Before(calStart) || t.After(dayBefore) {
-				continue
-			}
-			if anchor.IsZero() || t.After(anchor) {
-				anchor, balance = t, v
-			}
+	// Parse the overrides once.
+	type anchor struct {
+		date  time.Time
+		value int64
+	}
+	var ovs []anchor
+	for k, v := range overrides {
+		t, err := ParseDate(k)
+		if err != nil {
+			continue
 		}
-		if !anchor.IsZero() {
-			sumFrom = anchor.AddDate(0, 0, 1)
+		ovs = append(ovs, anchor{t, v})
+	}
+
+	// net returns the sum of all (non-skipped) occurrences in [a, b].
+	net := func(a, b time.Time) int64 {
+		var sum int64
+		if b.Before(a) {
+			return 0
 		}
 		for _, s := range series {
-			if sumFrom.After(dayBefore) {
-				break
-			}
-			for _, d := range Occurrences(s.Start, s.Until, s.Recurrence, sumFrom, dayBefore) {
+			for _, d := range Occurrences(s.Start, s.Until, s.Recurrence, a, b) {
 				if !s.Skips[d.Format(DateLayout)] {
-					balance += s.Amount
+					sum += s.Amount
 				}
 			}
 		}
+		return sum
+	}
+
+	// first is the first day with a known balance; before it the balance is
+	// flat at that day's opening balance.
+	first, flat := calStart, startBalance
+	for _, a := range ovs {
+		if a.date.Before(first) {
+			first = a.date
+		}
+	}
+	if first.Before(calStart) {
+		v := overrides[first.Format(DateLayout)]
+		flat = v - net(first, first)
+	}
+
+	// Opening balance at the start of `from`: continue from the latest known
+	// balance before it (an override's end of day or the start of calStart).
+	balance := flat
+	if from.After(first) {
+		dayBefore := from.AddDate(0, 0, -1)
+		sumFrom, base := first, flat
+		if !calStart.After(dayBefore) {
+			sumFrom, base = calStart, startBalance
+		}
+		for _, a := range ovs {
+			if a.date.After(dayBefore) {
+				continue
+			}
+			// An override on day t takes effect from t+1; the starting balance
+			// wins over an override on the day before calStart.
+			if next := a.date.AddDate(0, 0, 1); next.After(sumFrom) {
+				sumFrom, base = next, a.value
+			}
+		}
+		balance = base + net(sumFrom, dayBefore)
 	}
 	l.Opening = balance
 
@@ -292,7 +337,12 @@ func BuildLedgerWithOverrides(calStart time.Time, startBalance int64, series []S
 				day.Expense += -e.Amount
 			}
 		}
-		if !d.Before(calStart) {
+		if !d.Before(first) {
+			if d.Equal(calStart) && balance != startBalance {
+				day.StartAdjustment = startBalance - balance
+				l.Adjustment += day.StartAdjustment
+				balance = startBalance
+			}
 			balance += day.Income - day.Expense
 			l.Income += day.Income
 			l.Expense += day.Expense

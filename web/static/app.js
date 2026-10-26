@@ -48,13 +48,19 @@
   function firstOfMonth(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
   function addDays(d, n) { return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n); }
 
+  // Whole amounts are shown without ".00".
   function money(cents, opts = {}) {
     const currency = state.calendar ? state.calendar.currency : "EUR";
+    const whole = cents % 100 === 0 ? { minimumFractionDigits: 0 } : {};
     try {
-      return new Intl.NumberFormat(undefined, { style: "currency", currency, ...opts }).format(cents / 100);
+      return new Intl.NumberFormat(undefined, { style: "currency", currency, ...whole, ...opts }).format(cents / 100);
     } catch {
-      return `${(cents / 100).toFixed(2)} ${currency}`;
+      return `${plainAmount(cents)} ${currency}`;
     }
+  }
+  // Plain number for input fields, e.g. "1250" or "49.90".
+  function plainAmount(cents) {
+    return cents % 100 === 0 ? String(cents / 100) : (cents / 100).toFixed(2);
   }
 
   // Accepts "1234.5", "1,234.50", "1234,50", "1.234,50" and returns cents or NaN.
@@ -75,7 +81,7 @@
     return neg ? -cents : cents;
   }
 
-  function centsToInput(c) { return (Math.abs(c) / 100).toFixed(2); }
+  function centsToInput(c) { return plainAmount(Math.abs(c)); }
 
   let toastTimer;
   function toast(msg) {
@@ -179,6 +185,21 @@
     await refresh();
   }
 
+  // Calendars shared with the user by someone else show up when the tab is
+  // focused again (no page reload needed).
+  let calendarsCheck = 0;
+  async function checkSharedCalendars() {
+    if (!state.user || $("#app-view").hidden || Date.now() - calendarsCheck < 5000) return;
+    calendarsCheck = Date.now();
+    try {
+      const list = await api("GET", "/calendars");
+      const key = (l) => l.map((c) => `${c.id}:${c.role}:${c.name}`).join("|");
+      if (key(list) === key(state.calendars)) return;
+      if (document.querySelector("dialog[open]")) return; // do not disturb an open dialog
+      await loadCalendars();
+    } catch { /* ignore */ }
+  }
+
   function localStorageGet(k) { try { return localStorage.getItem(`eurofish.${k}`); } catch { return null; } }
   function localStorageSet(k, v) { try { localStorage.setItem(`eurofish.${k}`, v); } catch { /* ignore */ } }
 
@@ -274,7 +295,7 @@
     const inMonth = days.filter((d) => parseISO(d.date).getMonth() === month);
     const opening = idx > 0 ? days[idx - 1].balance : state.ledger.opening;
     let income = 0, expense = 0, adjust = 0, lowest = Infinity;
-    for (const d of inMonth) { income += d.income; expense += d.expense; adjust += d.adjustment || 0; lowest = Math.min(lowest, d.balance); }
+    for (const d of inMonth) { income += d.income; expense += d.expense; adjust += (d.adjustment || 0) + (d.start_adjustment || 0); lowest = Math.min(lowest, d.balance); }
     const closing = inMonth.length ? inMonth[inMonth.length - 1].balance : opening;
     const row = (label, value, cls) => [h("dt", null, label), h("dd", { class: cls || "" }, value)];
     $("#summary").replaceChildren(
@@ -447,7 +468,7 @@
     const calculated = day.balance - (hasOverride ? day.adjustment : 0);
     $("#balance-day").textContent = parseISO(dateIso).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" }) +
       ` · calculated: ${money(calculated)}`;
-    f.balance.value = (day.balance / 100).toFixed(2);
+    f.balance.value = plainAmount(day.balance);
     $("#balance-clear").hidden = !hasOverride;
     $("#balance-dialog").showModal();
     f.balance.focus();
@@ -555,7 +576,7 @@
     $("#calendar-dialog-title").textContent = c ? "Calendar settings" : "New calendar";
     f.name.value = c ? c.name : (state.calendars.length ? "" : "Household");
     f.currency.value = c ? c.currency : "EUR";
-    f.start_balance.value = c ? (c.start_balance / 100).toFixed(2) : "";
+    f.start_balance.value = c ? plainAmount(c.start_balance) : "";
     f.start_date.value = c ? c.start_date : iso(new Date());
     $("#calendar-delete").hidden = !c || c.role !== "owner";
     f.dataset.mode = c ? "edit" : "create";
@@ -614,16 +635,58 @@
 
   async function renderMembers() {
     const owner = state.calendar.role === "owner";
+    const calId = state.calendar.id;
     try {
-      const members = await api("GET", `/calendars/${state.calendar.id}/members`);
-      $("#member-list").replaceChildren(...members.map((m) => {
+      const [members, invites] = await Promise.all([
+        api("GET", `/calendars/${calId}/members`),
+        api("GET", `/calendars/${calId}/invites`),
+      ]);
+      const roleLabel = { owner: "owner", editor: "can edit", viewer: "can view" };
+      const rows = members.map((m) => {
         const self = m.user_id === state.user.id;
         const canRemove = m.role !== "owner" && (owner || self);
+        let access;
+        if (owner && m.role !== "owner") {
+          access = h("select", { class: "role-select", "aria-label": `Access for ${m.display_name}`, onchange: (e) => changeRole(m, e.target) },
+            h("option", { value: "editor", selected: m.role === "editor" }, "Can edit"),
+            h("option", { value: "viewer", selected: m.role === "viewer" }, "Can view"));
+        } else {
+          access = h("span", { class: "muted small" }, roleLabel[m.role] || m.role);
+        }
         return h("li", null,
           h("div", { class: "who" }, h("span", null, m.display_name + (self ? " (you)" : "")), h("span", { class: "muted small" }, m.email)),
-          h("span", { class: "muted small" }, m.role),
+          access,
           canRemove ? h("button", { type: "button", class: "btn ghost small danger", onclick: () => removeMember(m, self) }, self ? "Leave" : "Remove") : null);
-      }));
+      });
+      for (const inv of invites) {
+        rows.push(h("li", null,
+          h("div", { class: "who" }, h("span", null, inv.email), h("span", { class: "muted small" }, "invited · gets access after signing up")),
+          h("span", { class: "muted small" }, roleLabel[inv.role] || inv.role),
+          owner ? h("button", { type: "button", class: "btn ghost small danger", onclick: () => removeInvite(inv) }, "Cancel") : null));
+      }
+      $("#member-list").replaceChildren(...rows);
+    } catch (e) {
+      showError($("#share-error"), e.message);
+    }
+  }
+
+  async function changeRole(m, select) {
+    showError($("#share-error"), "");
+    try {
+      await api("PATCH", `/calendars/${state.calendar.id}/members/${m.user_id}`, { role: select.value });
+      toast("Access updated");
+      await renderMembers();
+    } catch (e) {
+      select.value = m.role;
+      showError($("#share-error"), e.message);
+    }
+  }
+
+  async function removeInvite(inv) {
+    if (!confirm(`Cancel the invitation for ${inv.email}?`)) return;
+    try {
+      await api("DELETE", `/calendars/${state.calendar.id}/invites/${encodeURIComponent(inv.email)}`);
+      await renderMembers();
     } catch (e) {
       showError($("#share-error"), e.message);
     }
@@ -650,9 +713,9 @@
     const f = ev.target;
     showError($("#share-error"), "");
     try {
-      await api("POST", `/calendars/${state.calendar.id}/members`, { email: f.email.value, role: f.role.value });
+      const res = await api("POST", `/calendars/${state.calendar.id}/members`, { email: f.email.value, role: f.role.value });
       f.email.value = "";
-      toast("Access granted");
+      toast(res && res.user_id ? "Access granted" : "Invited — they get access when they sign up with this e-mail");
       await renderMembers();
     } catch (e) {
       showError($("#share-error"), e.message);
@@ -708,6 +771,8 @@
     window.addEventListener("resize", () => closeDayMenu());
     window.addEventListener("blur", () => closeDayMenu());
     document.addEventListener("scroll", () => closeDayMenu(), true);
+    window.addEventListener("focus", () => { checkSharedCalendars(); });
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) checkSharedCalendars(); });
 
     document.querySelectorAll("[data-close]").forEach((b) =>
       b.addEventListener("click", () => b.closest("dialog").close()));

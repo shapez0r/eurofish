@@ -74,6 +74,10 @@ func (s *Server) signup(c *fiber.Ctx) error {
 		}
 		return err
 	}
+	// Calendars shared with this e-mail address before the account existed.
+	if err := s.store.AcceptInvites(c.UserContext(), u.ID, u.Email); err != nil {
+		s.log.Warn("accepting calendar invites failed", "user", u.ID, "err", err)
+	}
 	if err := s.startSession(c, u.ID); err != nil {
 		return err
 	}

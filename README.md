@@ -7,10 +7,10 @@ household so everyone plans with the same numbers.
 
 - 📅 Month view with planned transactions and the end-of-day balance on every day
 - 🔁 Repeating transactions: daily, weekly, every 2 weeks, monthly, quarterly, yearly, monthly on an exact day number (e.g. every 15th) or on a weekday of the month (e.g. every first Monday) — with optional end date, plus "remove this day only"
-- ✏️ Set the actual balance on any specific day; the following days continue from it
+- ✏️ Set the actual balance on any specific day — also before the calendar's balance date; the following days continue from it
 - 🖱️ Right-click a day for quick actions: open day, add expense/income, set or remove the balance on that day
 - 🚨 Days that would go negative are highlighted; monthly start/income/expenses/end/lowest summary
-- 👥 Multiple calendars per user, shared with others as *editor* or *viewer*
+- 👥 Multiple calendars per user, shared with others by e-mail as *editor* or *viewer* (people without an account yet get access as soon as they sign up)
 - 🔐 Self-service accounts (e-mail + password), optionally limited to your home network; Google/Apple sign-in is prepared in the data model
 - 📦 One static binary with the web UI embedded — runs as a `FROM scratch` container, a systemd service or as PID 1 in a microVM
 - 📈 Scales from a laptop (SQLite + in-process cache) to many stateless replicas (MariaDB + Valkey) by changing environment variables only

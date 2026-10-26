@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -183,6 +184,16 @@ func (s *Server) listMembers(c *fiber.Ctx) error {
 	return c.JSON(members)
 }
 
+func validRole(role string) error {
+	if role != store.RoleEditor && role != store.RoleViewer {
+		return badRequest("role must be editor or viewer")
+	}
+	return nil
+}
+
+// addMember shares the calendar with someone by e-mail. If nobody has an
+// account with that address yet, a pending invite is stored and the calendar
+// appears for them as soon as they sign up with it.
 func (s *Server) addMember(c *fiber.Ctx) error {
 	cal, err := s.calendarFor(c, store.RoleOwner)
 	if err != nil {
@@ -195,8 +206,8 @@ func (s *Server) addMember(c *fiber.Ctx) error {
 	if err := c.BodyParser(&in); err != nil {
 		return badRequest("invalid JSON body")
 	}
-	if in.Role != store.RoleEditor && in.Role != store.RoleViewer {
-		return badRequest("role must be editor or viewer")
+	if err := validRole(in.Role); err != nil {
+		return err
 	}
 	email, err := normalizeEmail(in.Email)
 	if err != nil {
@@ -204,10 +215,17 @@ func (s *Server) addMember(c *fiber.Ctx) error {
 	}
 	u, err := s.store.UserByEmail(c.UserContext(), email)
 	if errors.Is(err, store.ErrNotFound) {
-		return fiber.NewError(fiber.StatusNotFound, "no eurofish account uses this e-mail yet; ask them to sign up first")
+		inv, err := s.store.SetInvite(c.UserContext(), cal.ID, email, in.Role, currentUser(c).ID)
+		if err != nil {
+			return err
+		}
+		return c.Status(fiber.StatusAccepted).JSON(inv)
 	}
 	if err != nil {
 		return err
+	}
+	if u.ID == currentUser(c).ID {
+		return badRequest("you already own this calendar")
 	}
 	if err := s.store.AddMember(c.UserContext(), cal.ID, u.ID, in.Role); err != nil {
 		if errors.Is(err, store.ErrConflict) {
@@ -216,6 +234,57 @@ func (s *Server) addMember(c *fiber.Ctx) error {
 		return err
 	}
 	return c.Status(fiber.StatusCreated).JSON(store.Member{UserID: u.ID, Email: u.Email, DisplayName: u.DisplayName, Role: in.Role})
+}
+
+// updateMember changes what a member may do (owner only).
+func (s *Server) updateMember(c *fiber.Ctx) error {
+	cal, err := s.calendarFor(c, store.RoleOwner)
+	if err != nil {
+		return err
+	}
+	var in struct {
+		Role string `json:"role"`
+	}
+	if err := c.BodyParser(&in); err != nil {
+		return badRequest("invalid JSON body")
+	}
+	if err := validRole(in.Role); err != nil {
+		return err
+	}
+	if err := s.store.UpdateMemberRole(c.UserContext(), cal.ID, c.Params("userId"), in.Role); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return fiber.NewError(fiber.StatusBadRequest, "member not found (the owner's access cannot be changed)")
+		}
+		return err
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func (s *Server) listInvites(c *fiber.Ctx) error {
+	cal, err := s.calendarFor(c)
+	if err != nil {
+		return err
+	}
+	list, err := s.store.ListInvites(c.UserContext(), cal.ID)
+	if err != nil {
+		return err
+	}
+	return c.JSON(list)
+}
+
+func (s *Server) deleteInvite(c *fiber.Ctx) error {
+	cal, err := s.calendarFor(c, store.RoleOwner)
+	if err != nil {
+		return err
+	}
+	email, err := url.PathUnescape(c.Params("email"))
+	if err != nil {
+		return badRequest("invalid e-mail address")
+	}
+	if err := s.store.DeleteInvite(c.UserContext(), cal.ID, strings.ToLower(strings.TrimSpace(email))); err != nil {
+		return err
+	}
+	return c.SendStatus(fiber.StatusNoContent)
 }
 
 func (s *Server) removeMember(c *fiber.Ctx) error {
@@ -418,9 +487,6 @@ func (s *Server) setBalance(c *fiber.Ctx) error {
 	}
 	if err := validAmount("balance", *in.Balance); err != nil {
 		return err
-	}
-	if date < cal.StartDate {
-		return badRequest("the date must not be before the calendar's balance date")
 	}
 	if err := s.store.SetBalanceOverride(c.UserContext(), cal.ID, date, *in.Balance, currentUser(c).ID); err != nil {
 		return err

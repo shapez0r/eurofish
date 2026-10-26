@@ -1,4 +1,4 @@
-VERSION ?= $(shell git describe --tags --always 2>/dev/null || echo dev)
+3333 ?= $(shell git describe --tags --always 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
 .PHONY: build run test tidy docker up scale down rootfs clean

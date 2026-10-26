@@ -185,6 +185,8 @@ dialog form, .dialog-body { display: flex; flex-direction: column; gap: .8rem; p
 .member-list li { display: flex; justify-content: space-between; align-items: center; gap: .5rem; padding: .4rem 0; border-bottom: 1px solid var(--line); }
 .member-list .who { display: flex; flex-direction: column; min-width: 0; }
 .member-list .who span { overflow: hidden; text-overflow: ellipsis; }
+.member-list .who { flex: 1; }
+.member-list .role-select { width: auto; padding: .3rem .4rem; font-size: .85rem; }
 
 .toast {
   position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg);

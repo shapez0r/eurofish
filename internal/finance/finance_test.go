@@ -136,9 +136,40 @@ func TestLedgerBalanceOverride(t *testing.T) {
 	if l.Opening != 100000-500 {
 		t.Fatalf("opening = %d", l.Opening)
 	}
-	// Overrides before the calendar start are ignored.
-	l = BuildLedgerWithOverrides(d("2026-01-05"), 50000, series, d("2026-01-05"), d("2026-01-05"), map[string]int64{"2026-01-01": 1})
-	if l.Closing != 49500 {
+}
+
+func TestLedgerOverrideBeforeCalendarStart(t *testing.T) {
+	series := []Series{
+		{ID: "coffee", Title: "Coffee", Amount: -500, Start: d("2026-01-01"), Recurrence: Daily},
+	}
+	overrides := map[string]int64{"2026-01-02": 20000}
+	// Calendar starts on the 5th with 500.00; a balance was set on the 2nd.
+	l := BuildLedgerWithOverrides(d("2026-01-05"), 50000, series, d("2026-01-01"), d("2026-01-06"), overrides)
+	// Before the first known balance the day shows the opening of the 2nd.
+	if l.Opening != 20500 || l.Days[0].Balance != 20500 {
+		t.Fatalf("opening = %d, day 1 = %d", l.Opening, l.Days[0].Balance)
+	}
+	if l.Days[1].Balance != 20000 || l.Days[1].Override == nil || l.Days[1].Adjustment != 0 {
+		t.Fatalf("override day = %+v", l.Days[1])
+	}
+	if l.Days[3].Balance != 20000-2*500 {
+		t.Fatalf("day 4 balance = %d", l.Days[3].Balance)
+	}
+	// The starting balance applies again on the balance date.
+	if l.Days[4].Balance != 50000-500 || l.Days[4].StartAdjustment != 50000-(20000-2*500) {
+		t.Fatalf("start day = %+v", l.Days[4])
+	}
+	if l.Closing != 50000-2*500 {
 		t.Fatalf("closing = %d", l.Closing)
+	}
+	// Windows starting between the override and the balance date.
+	l = BuildLedgerWithOverrides(d("2026-01-05"), 50000, series, d("2026-01-04"), d("2026-01-05"), overrides)
+	if l.Opening != 20000-500 || l.Days[0].Balance != 20000-1000 || l.Days[1].Balance != 49500 {
+		t.Fatalf("opening = %d, days = %d %d", l.Opening, l.Days[0].Balance, l.Days[1].Balance)
+	}
+	// Windows after the balance date are unaffected by earlier overrides.
+	l = BuildLedgerWithOverrides(d("2026-01-05"), 50000, series, d("2026-01-07"), d("2026-01-07"), overrides)
+	if l.Opening != 50000-2*500 || l.Closing != 50000-3*500 {
+		t.Fatalf("opening = %d closing = %d", l.Opening, l.Closing)
 	}
 }
