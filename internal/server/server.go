@@ -5,7 +5,10 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -118,11 +121,25 @@ func New(cfg *config.Config, database *db.DB, c cache.Cache, log *slog.Logger, v
 	})
 
 	// Embedded single-page web UI (no separate frontend deployment needed).
-	app.Use("/", filesystem.New(filesystem.Config{
-		Root:         http.FS(web.Static()),
+	// The UI must never run a stale app.js from the browser cache after an
+	// update: index.html links app.js/app.css with a content hash and all UI
+	// files are revalidated on every load.
+	ui := web.Static()
+	index := versionedIndex(ui)
+	serveIndex := func(c *fiber.Ctx) error {
+		c.Set("Cache-Control", "no-cache")
+		c.Type("html", "utf-8")
+		return c.Send(index)
+	}
+	app.Get("/", serveIndex)
+	app.Get("/index.html", serveIndex)
+	app.Use("/", func(c *fiber.Ctx) error {
+		c.Set("Cache-Control", "no-cache")
+		return c.Next()
+	}, filesystem.New(filesystem.Config{
+		Root:         http.FS(ui),
 		Index:        "index.html",
 		NotFoundFile: "index.html",
-		MaxAge:       300,
 	}))
 
 	return s
@@ -153,6 +170,25 @@ func (s *Server) RunJanitor(ctx context.Context) {
 		case <-t.C:
 		}
 	}
+}
+
+// versionedIndex returns index.html with "?v=<content hash>" appended to the
+// app.js and app.css links, so browsers load the new UI right after an update.
+func versionedIndex(ui fs.FS) []byte {
+	page, err := fs.ReadFile(ui, "index.html")
+	if err != nil {
+		return nil
+	}
+	h := sha256.New()
+	for _, name := range []string{"app.js", "app.css"} {
+		if b, err := fs.ReadFile(ui, name); err == nil {
+			h.Write(b)
+		}
+	}
+	v := hex.EncodeToString(h.Sum(nil))[:12]
+	out := strings.Replace(string(page), `src="app.js"`, `src="app.js?v=`+v+`"`, 1)
+	out = strings.Replace(out, `href="app.css"`, `href="app.css?v=`+v+`"`, 1)
+	return []byte(out)
 }
 
 // ---------- middleware & helpers ----------
