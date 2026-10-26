@@ -23,6 +23,7 @@
     editing: null, // { event, occurrenceDate }
     dayOpen: null,
     balanceDate: null, // day whose balance is being set
+    slide: 0, // direction of the next month-change animation
   };
 
   // ---------- utilities ----------
@@ -87,9 +88,49 @@
   function toast(msg) {
     const t = $("#toast");
     t.textContent = msg;
+    t.classList.remove("leaving");
     t.hidden = false;
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { t.hidden = true; }, 3000);
+    toastTimer = setTimeout(() => {
+      t.classList.add("leaving");
+      toastTimer = setTimeout(() => { t.hidden = true; t.classList.remove("leaving"); }, reducedMotion() ? 0 : 200);
+    }, 3000);
+  }
+
+  function reducedMotion() {
+    return !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  }
+
+  // Re-triggers a CSS animation class on an element.
+  function animate(el, cls) {
+    if (!el) return;
+    el.classList.remove("slide-next", "slide-prev", "fade");
+    void el.offsetWidth; // restart the animation
+    el.classList.add(cls);
+  }
+
+  // Dialogs fade/slide out before they actually close.
+  function enhanceDialog(d) {
+    const nativeClose = d.close.bind(d);
+    const nativeShow = d.showModal.bind(d);
+    let timer = null;
+    d.close = (ret) => {
+      if (!d.open) return;
+      if (timer) return;
+      if (reducedMotion()) { nativeClose(ret); return; }
+      d.classList.add("closing");
+      timer = setTimeout(() => {
+        timer = null;
+        d.classList.remove("closing");
+        nativeClose(ret);
+      }, 160);
+    };
+    d.showModal = () => {
+      if (timer) { clearTimeout(timer); timer = null; d.classList.remove("closing"); return; }
+      nativeShow();
+    };
+    // Escape: animate instead of closing instantly.
+    d.addEventListener("cancel", (e) => { e.preventDefault(); d.close(); });
   }
 
   function showError(el, msg) { el.textContent = msg || ""; el.hidden = !msg; }
@@ -285,7 +326,11 @@
           day.entries.length > 3 ? h("span", { class: "more" }, `+${day.entries.length - 3} more`) : null),
         h("span", { class: "bal", title: classes.includes("override") ? "Balance set manually" : null }, money(day.balance)));
     });
-    $("#grid").replaceChildren(...cells);
+    const grid = $("#grid");
+    grid.replaceChildren(...cells);
+    const slide = state.slide;
+    state.slide = 0;
+    animate(grid, slide > 0 ? "slide-next" : slide < 0 ? "slide-prev" : "fade");
   }
 
   function renderSummary() {
@@ -726,6 +771,7 @@
 
   function changeMonth(delta) {
     state.month = new Date(state.month.getFullYear(), state.month.getMonth() + delta, 1);
+    state.slide = delta;
     state.dayOpen = null;
     refresh().catch((e) => toast(e.message));
   }
@@ -738,7 +784,13 @@
 
     $("#prev-month").addEventListener("click", () => changeMonth(-1));
     $("#next-month").addEventListener("click", () => changeMonth(1));
-    $("#today").addEventListener("click", () => { state.month = firstOfMonth(new Date()); changeMonth(0); });
+    $("#today").addEventListener("click", () => {
+      const target = firstOfMonth(new Date());
+      const diff = Math.sign(target - state.month);
+      state.month = target;
+      changeMonth(0);
+      state.slide = diff;
+    });
     $("#menu-toggle").addEventListener("click", () => $("#sidebar").classList.toggle("open"));
 
     $("#new-calendar").addEventListener("click", () => openCalendarDialog(false));
@@ -774,6 +826,8 @@
     window.addEventListener("focus", () => { checkSharedCalendars(); });
     document.addEventListener("visibilitychange", () => { if (!document.hidden) checkSharedCalendars(); });
 
+    document.querySelectorAll("dialog").forEach(enhanceDialog);
+    wireSwipes();
     document.querySelectorAll("[data-close]").forEach((b) =>
       b.addEventListener("click", () => b.closest("dialog").close()));
     // Close dialogs when clicking on the backdrop.
@@ -787,6 +841,65 @@
       if (e.key === "ArrowLeft") changeMonth(-1);
       if (e.key === "ArrowRight") changeMonth(1);
     });
+  }
+
+  // ---------- touch swipes ----------
+  // Swipe the calendar left/right to change month; swipe the sidebar open from
+  // the left edge and closed again (it follows the finger).
+  function wireSwipes() {
+    const cal = $("#calendar");
+    const sidebar = $("#sidebar");
+    let sx = 0, sy = 0, st = 0, tracking = null, dragX = 0;
+    const narrow = () => window.matchMedia("(max-width: 820px)").matches;
+
+    cal.addEventListener("touchstart", (e) => {
+      if (e.touches.length !== 1) return;
+      sx = e.touches[0].clientX; sy = e.touches[0].clientY; st = Date.now();
+    }, { passive: true });
+    cal.addEventListener("touchend", (e) => {
+      const t = e.changedTouches[0];
+      const dx = t.clientX - sx, dy = t.clientY - sy;
+      if (Date.now() - st > 600 || Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      if (sx < 24 && dx > 0 && narrow()) return; // edge swipe opens the sidebar instead
+      changeMonth(dx < 0 ? 1 : -1);
+    }, { passive: true });
+
+    document.addEventListener("touchstart", (e) => {
+      if (e.touches.length !== 1 || !narrow() || $("#app-view").hidden || document.querySelector("dialog[open]")) return;
+      const x = e.touches[0].clientX;
+      const open = sidebar.classList.contains("open");
+      if (open || x < 24) {
+        tracking = open ? "close" : "open";
+        sx = x; sy = e.touches[0].clientY; dragX = 0; st = Date.now();
+      }
+    }, { passive: true });
+    document.addEventListener("touchmove", (e) => {
+      if (!tracking) return;
+      const dx = e.touches[0].clientX - sx, dy = e.touches[0].clientY - sy;
+      if (!sidebar.classList.contains("dragging")) {
+        if (Math.abs(dx) < 8) return;
+        if (Math.abs(dy) > Math.abs(dx)) { tracking = null; return; }
+        sidebar.classList.add("dragging");
+      }
+      const w = sidebar.offsetWidth || 260;
+      dragX = dx;
+      const offset = tracking === "close" ? Math.min(0, dx) : Math.min(0, -w + dx);
+      sidebar.style.transform = `translateX(${Math.max(-w, offset)}px)`;
+    }, { passive: true });
+    const end = () => {
+      if (!tracking) return;
+      const was = tracking;
+      tracking = null;
+      if (!sidebar.classList.contains("dragging")) return;
+      sidebar.classList.remove("dragging");
+      sidebar.style.transform = "";
+      const w = sidebar.offsetWidth || 260;
+      const fast = Date.now() - st < 300 && Math.abs(dragX) > 30;
+      if (was === "close") sidebar.classList.toggle("open", !(dragX < -w / 3 || (fast && dragX < 0)));
+      else sidebar.classList.toggle("open", dragX > w / 3 || (fast && dragX > 0));
+    };
+    document.addEventListener("touchend", end, { passive: true });
+    document.addEventListener("touchcancel", end, { passive: true });
   }
 
   async function boot() {
