@@ -38,6 +38,7 @@ type Calendar struct {
 	StartDate    string `json:"start_date"`
 	StartBalance int64  `json:"start_balance"`
 	OwnerID      string `json:"owner_id"`
+	OwnerName    string `json:"owner_name"` // display name of the owner
 	Version      int64  `json:"version"`
 	CreatedAt    int64  `json:"created_at"`
 	Role         string `json:"role"` // role of the requesting user
@@ -188,11 +189,14 @@ func (s *Store) CreateCalendar(ctx context.Context, c *Calendar) error {
 	return tx.Commit()
 }
 
-const calendarCols = `c.id, c.name, c.currency, c.start_date, c.start_balance, c.owner_id, c.version, c.created_at, m.role`
+const calendarCols = `c.id, c.name, c.currency, c.start_date, c.start_balance, c.owner_id, o.display_name, c.version, c.created_at, m.role`
+
+// calendarFrom joins the requesting user's membership and the owner's account.
+const calendarFrom = ` FROM calendars c JOIN calendar_members m ON m.calendar_id = c.id JOIN users o ON o.id = c.owner_id`
 
 func scanCalendar(sc interface{ Scan(...any) error }) (*Calendar, error) {
 	var c Calendar
-	if err := sc.Scan(&c.ID, &c.Name, &c.Currency, &c.StartDate, &c.StartBalance, &c.OwnerID, &c.Version, &c.CreatedAt, &c.Role); err != nil {
+	if err := sc.Scan(&c.ID, &c.Name, &c.Currency, &c.StartDate, &c.StartBalance, &c.OwnerID, &c.OwnerName, &c.Version, &c.CreatedAt, &c.Role); err != nil {
 		return nil, err
 	}
 	return &c, nil
@@ -200,7 +204,7 @@ func scanCalendar(sc interface{ Scan(...any) error }) (*Calendar, error) {
 
 func (s *Store) ListCalendars(ctx context.Context, userID string) ([]Calendar, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT `+calendarCols+` FROM calendars c JOIN calendar_members m ON m.calendar_id = c.id
+		`SELECT `+calendarCols+calendarFrom+`
 		  WHERE m.user_id = ? ORDER BY c.created_at, c.id`, userID)
 	if err != nil {
 		return nil, err
@@ -220,7 +224,7 @@ func (s *Store) ListCalendars(ctx context.Context, userID string) ([]Calendar, e
 // CalendarForUser returns the calendar if the user is a member of it.
 func (s *Store) CalendarForUser(ctx context.Context, calendarID, userID string) (*Calendar, error) {
 	c, err := scanCalendar(s.db.QueryRowContext(ctx,
-		`SELECT `+calendarCols+` FROM calendars c JOIN calendar_members m ON m.calendar_id = c.id
+		`SELECT `+calendarCols+calendarFrom+`
 		  WHERE c.id = ? AND m.user_id = ?`, calendarID, userID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound

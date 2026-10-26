@@ -234,7 +234,7 @@
     calendarsCheck = Date.now();
     try {
       const list = await api("GET", "/calendars");
-      const key = (l) => l.map((c) => `${c.id}:${c.role}:${c.name}`).join("|");
+      const key = (l) => l.map((c) => `${c.id}:${c.role}:${c.name}:${c.owner_name}`).join("|");
       if (key(list) === key(state.calendars)) return;
       if (document.querySelector("dialog[open]")) return; // do not disturb an open dialog
       await loadCalendars();
@@ -251,7 +251,12 @@
         type: "button",
         class: state.calendar && c.id === state.calendar.id ? "active" : "",
         onclick: () => selectCalendar(c.id),
-      }, h("span", null, c.name), c.role !== "owner" ? h("span", { class: "role" }, c.role) : null),
+        title: c.owner_name ? `${c.name} — owned by ${c.owner_name}` : c.name,
+      },
+        h("span", { class: "cal-name" },
+          h("span", { class: "name" }, c.name),
+          c.owner_name ? h("span", { class: "owner" }, `by ${c.owner_name}`) : null),
+        c.role !== "owner" ? h("span", { class: "role" }, c.role) : null),
     )));
   }
 

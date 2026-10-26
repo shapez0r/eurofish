@@ -121,6 +121,7 @@ func (s *Server) createCalendar(c *fiber.Ctx) error {
 		Currency:  "EUR",
 		StartDate: now.UTC().Format(finance.DateLayout),
 		OwnerID:   currentUser(c).ID,
+		OwnerName: currentUser(c).DisplayName,
 		CreatedAt: now.Unix(),
 	}
 	if err := in.apply(cal); err != nil {
