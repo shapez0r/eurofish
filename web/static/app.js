@@ -7,7 +7,9 @@
   const RECURRENCE_LABEL = {
     none: "", daily: "daily", weekly: "weekly", biweekly: "every 2 weeks",
     monthly: "monthly", quarterly: "quarterly", yearly: "yearly",
+    monthly_day: "monthly on this day number", monthly_nth: "monthly on this weekday",
   };
+  const ORDINALS = ["first", "second", "third", "fourth", "last"];
 
   const state = {
     user: null,
@@ -20,6 +22,7 @@
     signupEnabled: false,
     editing: null, // { event, occurrenceDate }
     dayOpen: null,
+    balanceDate: null, // day whose balance is being set
   };
 
   // ---------- utilities ----------
@@ -244,16 +247,22 @@
       if (day.date === todayIso) classes.push("today");
       if (day.balance < 0) classes.push("negative");
       if (day.entries.length) classes.push("has-items");
+      if (day.override !== undefined && day.override !== null) classes.push("override");
       const shown = day.entries.slice(0, 3);
       const label = `${date.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}, ` +
-        `${day.entries.length} transactions, balance ${money(day.balance)}`;
-      return h("button", { type: "button", class: classes.join(" "), "aria-label": label, onclick: () => openDay(day.date) },
+        `${day.entries.length} transactions, balance ${money(day.balance)}` +
+        (classes.includes("override") ? " (set manually)" : "");
+      return h("button", {
+        type: "button", class: classes.join(" "), "aria-label": label, "aria-haspopup": "menu",
+        onclick: () => openDay(day.date),
+        oncontextmenu: (e) => openDayMenu(e, day.date),
+      },
         h("span", { class: "num" }, date.getDate()),
         h("span", { class: "items" },
           shown.map((e) => h("span", { class: `item ${e.amount >= 0 ? "inc" : "exp"}`, title: `${e.title} ${money(e.amount)}` },
             `${e.title} ${money(e.amount, { maximumFractionDigits: 0, minimumFractionDigits: 0 })}`)),
           day.entries.length > 3 ? h("span", { class: "more" }, `+${day.entries.length - 3} more`) : null),
-        h("span", { class: "bal" }, money(day.balance)));
+        h("span", { class: "bal", title: classes.includes("override") ? "Balance set manually" : null }, money(day.balance)));
     });
     $("#grid").replaceChildren(...cells);
   }
@@ -264,8 +273,8 @@
     const idx = days.findIndex((d) => parseISO(d.date).getMonth() === month);
     const inMonth = days.filter((d) => parseISO(d.date).getMonth() === month);
     const opening = idx > 0 ? days[idx - 1].balance : state.ledger.opening;
-    let income = 0, expense = 0, lowest = Infinity;
-    for (const d of inMonth) { income += d.income; expense += d.expense; lowest = Math.min(lowest, d.balance); }
+    let income = 0, expense = 0, adjust = 0, lowest = Infinity;
+    for (const d of inMonth) { income += d.income; expense += d.expense; adjust += d.adjustment || 0; lowest = Math.min(lowest, d.balance); }
     const closing = inMonth.length ? inMonth[inMonth.length - 1].balance : opening;
     const row = (label, value, cls) => [h("dt", null, label), h("dd", { class: cls || "" }, value)];
     $("#summary").replaceChildren(
@@ -274,6 +283,7 @@
         row("Start", money(opening)),
         row("Income", `+${money(income)}`, "amt inc"),
         row("Expenses", `−${money(expense)}`, "amt exp"),
+        adjust ? row("Balance set", `${adjust > 0 ? "+" : "−"}${money(Math.abs(adjust))}`, adjust > 0 ? "amt inc" : "amt exp") : null,
         row("End", money(closing), closing < 0 ? "total amt exp" : "total"),
         row("Lowest", money(lowest === Infinity ? opening : lowest), lowest < 0 ? "amt exp" : "")),
     );
@@ -291,8 +301,11 @@
     if (!day) { if (keepOpen) $("#day-dialog").close(); return; }
     state.dayOpen = dateIso;
     $("#day-title").textContent = parseISO(dateIso).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
-    $("#day-balance").textContent = `End-of-day balance: ${money(day.balance)}`;
+    const hasOverride = day.override !== undefined && day.override !== null;
+    $("#day-balance").textContent = `End-of-day balance: ${money(day.balance)}` +
+      (hasOverride ? ` (set manually, ${day.adjustment >= 0 ? "+" : "−"}${money(Math.abs(day.adjustment))} vs. calculated)` : "");
     $("#day-add").hidden = !canEdit();
+    $("#day-set-balance").hidden = !canEdit();
     const items = day.entries.map((e) => h("li", null,
       h("button", { type: "button", onclick: () => openEvent(e.event_id, dateIso) },
         h("span", null, e.title, e.category ? h("span", { class: "muted small" }, ` · ${e.category}`) : null,
@@ -334,10 +347,30 @@
       el.disabled = readOnly && el.type !== "button";
     }
     f.querySelector("button[type=submit]").hidden = readOnly;
+    updateRepeatLabels();
     updateUntil();
     const dlg = $("#event-dialog");
     if (!dlg.open) dlg.showModal();
     if (!readOnly) f.title.focus();
+  }
+
+  // The "monthly on day N" / "monthly on the first Monday" options are derived
+  // from the chosen date, so their labels follow it.
+  function updateRepeatLabels() {
+    const f = $("#event-form");
+    const dayOpt = f.recurrence.querySelector("option[value=monthly_day]");
+    const nthOpt = f.recurrence.querySelector("option[value=monthly_nth]");
+    const v = f.start_date.value;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+      dayOpt.textContent = "Monthly on this day number";
+      nthOpt.textContent = "Monthly on this weekday (e.g. first Monday)";
+      return;
+    }
+    const d = parseISO(v);
+    const n = d.getDate();
+    dayOpt.textContent = `Monthly on day ${n}` + (n > 28 ? " (skips months without it)" : "");
+    const weekday = d.toLocaleDateString(undefined, { weekday: "long" });
+    nthOpt.textContent = `Monthly on the ${ORDINALS[Math.floor((n - 1) / 7)]} ${weekday}`;
   }
 
   function updateUntil() {
@@ -399,6 +432,117 @@
     } catch (err) {
       showError($("#event-error"), err.message);
     }
+  }
+
+  // ---------- balance on a specific day ----------
+
+  function openBalance(dateIso) {
+    const day = state.ledger && state.ledger.days.find((d) => d.date === dateIso);
+    if (!day || !canEdit()) return;
+    const f = $("#balance-form");
+    f.reset();
+    showError($("#balance-error"), "");
+    state.balanceDate = dateIso;
+    const hasOverride = day.override !== undefined && day.override !== null;
+    const calculated = day.balance - (hasOverride ? day.adjustment : 0);
+    $("#balance-day").textContent = parseISO(dateIso).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" }) +
+      ` · calculated: ${money(calculated)}`;
+    f.balance.value = (day.balance / 100).toFixed(2);
+    $("#balance-clear").hidden = !hasOverride;
+    $("#balance-dialog").showModal();
+    f.balance.focus();
+    f.balance.select();
+  }
+
+  async function onBalanceSubmit(ev) {
+    ev.preventDefault();
+    const f = ev.target;
+    const cents = parseMoney(f.balance.value);
+    if (!Number.isFinite(cents)) return showError($("#balance-error"), "Please enter an amount, e.g. 1250.00 or -40");
+    try {
+      await api("PUT", `/calendars/${state.calendar.id}/balances/${state.balanceDate}`, { balance: cents });
+      $("#balance-dialog").close();
+      toast("Balance set");
+      await refresh();
+    } catch (e) {
+      showError($("#balance-error"), e.message);
+    }
+  }
+
+  async function clearBalance(dateIso) {
+    try {
+      await api("DELETE", `/calendars/${state.calendar.id}/balances/${dateIso}`);
+      if ($("#balance-dialog").open) $("#balance-dialog").close();
+      toast("Set balance removed");
+      await refresh();
+    } catch (e) {
+      if ($("#balance-dialog").open) showError($("#balance-error"), e.message);
+      else toast(e.message);
+    }
+  }
+
+  // ---------- right-click menu on a day ----------
+
+  function openDayMenu(ev, dateIso) {
+    ev.preventDefault();
+    const day = state.ledger && state.ledger.days.find((d) => d.date === dateIso);
+    if (!day) return;
+    const hasOverride = day.override !== undefined && day.override !== null;
+    const item = (label, fn, cls) => h("button", {
+      type: "button", role: "menuitem", class: cls || null,
+      onclick: () => { closeDayMenu(); fn(); },
+    }, label);
+    const items = [
+      h("div", { class: "ctx-head" }, parseISO(dateIso).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" }) +
+        ` · ${money(day.balance)}`),
+      item("Open day", () => openDay(dateIso)),
+    ];
+    if (canEdit()) {
+      items.push(
+        item("Add expense…", () => { openEvent(null, null, dateIso); $("#event-form").kind.value = "expense"; }),
+        item("Add income…", () => { openEvent(null, null, dateIso); $("#event-form").kind.value = "income"; }),
+        h("hr", { role: "separator" }),
+        item(hasOverride ? "Change balance on this day…" : "Set balance on this day…", () => openBalance(dateIso)));
+      if (hasOverride) items.push(item("Remove set balance", () => clearBalance(dateIso), "danger"));
+    }
+    const menu = $("#day-menu");
+    menu.replaceChildren(...items);
+    menu.hidden = false;
+    // Keyboard-triggered context menus report (0, 0): anchor to the day cell instead.
+    let x = ev.clientX, y = ev.clientY;
+    if (!x && !y && ev.currentTarget && ev.currentTarget.getBoundingClientRect) {
+      const r = ev.currentTarget.getBoundingClientRect();
+      x = r.left + 8;
+      y = r.top + 8;
+    }
+    const mw = menu.offsetWidth, mh = menu.offsetHeight;
+    x = Math.max(4, Math.min(x, window.innerWidth - mw - 4));
+    y = Math.max(4, Math.min(y, window.innerHeight - mh - 4));
+    menu.style.left = `${x}px`;
+    menu.style.top = `${y}px`;
+    state.menuReturn = ev.currentTarget || null;
+    const first = menu.querySelector("button");
+    if (first) first.focus();
+  }
+
+  function closeDayMenu(restoreFocus) {
+    const menu = $("#day-menu");
+    if (menu.hidden) return;
+    menu.hidden = true;
+    menu.replaceChildren();
+    if (restoreFocus && state.menuReturn && state.menuReturn.isConnected) state.menuReturn.focus();
+    state.menuReturn = null;
+  }
+
+  function onMenuKey(e) {
+    const buttons = [...$("#day-menu").querySelectorAll("button")];
+    const i = buttons.indexOf(document.activeElement);
+    if (e.key === "Escape") { e.preventDefault(); closeDayMenu(true); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); buttons[(i + 1) % buttons.length].focus(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); buttons[(i - 1 + buttons.length) % buttons.length].focus(); }
+    else if (e.key === "Home") { e.preventDefault(); buttons[0].focus(); }
+    else if (e.key === "End") { e.preventDefault(); buttons[buttons.length - 1].focus(); }
+    else if (e.key === "Tab") closeDayMenu();
   }
 
   // ---------- calendar dialog ----------
@@ -547,9 +691,23 @@
     $("#day-add").addEventListener("click", () => openEvent(null, null, state.dayOpen));
     $("#event-form").addEventListener("submit", onEventSubmit);
     $("#event-form").recurrence.addEventListener("change", updateUntil);
+    $("#event-form").start_date.addEventListener("input", updateRepeatLabels);
+    $("#event-form").start_date.addEventListener("change", updateRepeatLabels);
     $("#event-delete").addEventListener("click", onEventDelete);
     $("#event-skip").addEventListener("click", onEventSkip);
     $("#day-dialog").addEventListener("close", () => { state.dayOpen = null; });
+    $("#day-set-balance").addEventListener("click", () => openBalance(state.dayOpen));
+    $("#balance-form").addEventListener("submit", onBalanceSubmit);
+    $("#balance-clear").addEventListener("click", () => clearBalance(state.balanceDate));
+
+    // Right-click menu on days.
+    const dayMenu = $("#day-menu");
+    dayMenu.addEventListener("keydown", onMenuKey);
+    dayMenu.addEventListener("contextmenu", (e) => e.preventDefault());
+    document.addEventListener("pointerdown", (e) => { if (!dayMenu.contains(e.target)) closeDayMenu(); }, true);
+    window.addEventListener("resize", () => closeDayMenu());
+    window.addEventListener("blur", () => closeDayMenu());
+    document.addEventListener("scroll", () => closeDayMenu(), true);
 
     document.querySelectorAll("[data-close]").forEach((b) =>
       b.addEventListener("click", () => b.closest("dialog").close()));
@@ -559,6 +717,7 @@
     }));
 
     document.addEventListener("keydown", (e) => {
+      if (!$("#day-menu").hidden) return; // the menu handles its own keys
       if (e.target.closest("input, textarea, select, dialog") || $("#app-view").hidden || !state.calendar) return;
       if (e.key === "ArrowLeft") changeMonth(-1);
       if (e.key === "ArrowRight") changeMonth(1);

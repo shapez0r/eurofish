@@ -277,7 +277,7 @@ func (in *eventInput) validate() error {
 		return err
 	}
 	if !finance.ValidRecurrence(in.Recurrence) {
-		return badRequest("recurrence must be one of none, daily, weekly, biweekly, monthly, quarterly, yearly")
+		return badRequest("recurrence must be one of none, daily, weekly, biweekly, monthly, monthly_day, monthly_nth, quarterly, yearly")
 	}
 	if in.Recurrence == finance.None {
 		in.UntilDate = ""
@@ -383,6 +383,66 @@ func (s *Server) skipOccurrence(c *fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
+// ---------- balance overrides ----------
+
+func (s *Server) listBalances(c *fiber.Ctx) error {
+	cal, err := s.calendarFor(c)
+	if err != nil {
+		return err
+	}
+	list, err := s.store.ListBalanceOverrides(c.UserContext(), cal.ID)
+	if err != nil {
+		return err
+	}
+	return c.JSON(list)
+}
+
+// setBalance sets the end-of-day balance of one day; later days continue from it.
+func (s *Server) setBalance(c *fiber.Ctx) error {
+	cal, err := s.calendarFor(c, store.RoleOwner, store.RoleEditor)
+	if err != nil {
+		return err
+	}
+	date := c.Params("date")
+	if err := validDate("date", date); err != nil {
+		return err
+	}
+	var in struct {
+		Balance *int64 `json:"balance"`
+	}
+	if err := c.BodyParser(&in); err != nil {
+		return badRequest("invalid JSON body")
+	}
+	if in.Balance == nil {
+		return badRequest("balance is required")
+	}
+	if err := validAmount("balance", *in.Balance); err != nil {
+		return err
+	}
+	if date < cal.StartDate {
+		return badRequest("the date must not be before the calendar's balance date")
+	}
+	if err := s.store.SetBalanceOverride(c.UserContext(), cal.ID, date, *in.Balance, currentUser(c).ID); err != nil {
+		return err
+	}
+	return c.JSON(store.BalanceOverride{Date: date, Balance: *in.Balance})
+}
+
+func (s *Server) deleteBalance(c *fiber.Ctx) error {
+	cal, err := s.calendarFor(c, store.RoleOwner, store.RoleEditor)
+	if err != nil {
+		return err
+	}
+	date := c.Params("date")
+	if err := validDate("date", date); err != nil {
+		return err
+	}
+	if err := s.store.DeleteBalanceOverride(c.UserContext(), cal.ID, date); err != nil {
+		return err
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
 // ---------- ledger (calendar view with running balance) ----------
 
 func (s *Server) ledger(c *fiber.Ctx) error {
@@ -441,10 +501,19 @@ func (s *Server) ledger(c *fiber.Ctx) error {
 		})
 	}
 
+	balances, err := s.store.ListBalanceOverrides(ctx, cal.ID)
+	if err != nil {
+		return err
+	}
+	overrides := make(map[string]int64, len(balances))
+	for _, b := range balances {
+		overrides[b.Date] = b.Balance
+	}
+
 	result := struct {
 		Calendar *store.Calendar `json:"calendar"`
 		finance.Ledger
-	}{Calendar: cal, Ledger: finance.BuildLedger(calStart, cal.StartBalance, series, from, to)}
+	}{Calendar: cal, Ledger: finance.BuildLedgerWithOverrides(calStart, cal.StartBalance, series, from, to, overrides)}
 
 	raw, err := json.Marshal(result)
 	if err != nil {

@@ -104,6 +104,8 @@
             <option value="weekly">Weekly</option>
             <option value="biweekly">Every 2 weeks</option>
             <option value="monthly">Monthly</option>
+            <option value="monthly_day">Monthly on this day number</option>
+            <option value="monthly_nth">Monthly on this weekday (e.g. first Monday)</option>
             <option value="quarterly">Quarterly</option>
             <option value="yearly">Yearly</option>
           </select>
@@ -130,10 +132,28 @@
       <ul id="day-entries" class="entry-list"></ul>
       <div class="dialog-actions">
         <span class="spacer"></span>
+        <button type="button" class="btn ghost" id="day-set-balance">Set balance</button>
         <button type="button" class="btn ghost" data-close>Close</button>
         <button type="button" class="btn primary" id="day-add">+ Transaction</button>
       </div>
     </div>
+  </dialog>
+
+  <!-- Set balance on a specific day -->
+  <dialog id="balance-dialog">
+    <form id="balance-form" method="dialog" novalidate>
+      <h2>Balance on this day</h2>
+      <p id="balance-day" class="muted"></p>
+      <label>End-of-day balance <input name="balance" inputmode="decimal" placeholder="0.00" required></label>
+      <p class="muted small">Transactions on this day are already included. The following days continue from this amount.</p>
+      <p id="balance-error" class="error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn danger ghost" id="balance-clear" hidden>Remove set balance</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn ghost" data-close>Cancel</button>
+        <button type="submit" class="btn primary">Save</button>
+      </div>
+    </form>
   </dialog>
 
   <!-- Calendar settings dialog -->
@@ -180,6 +200,8 @@
       </div>
     </form>
   </dialog>
+
+  <div id="day-menu" class="ctx-menu" role="menu" aria-label="Day actions" hidden></div>
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 </body>

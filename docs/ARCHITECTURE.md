@@ -53,6 +53,7 @@ identical on SQLite and MariaDB.
 - `calendar_members` — `(calendar, user, role)` with role `owner|editor|viewer`
 - `events` — title, amount, category, note, start date, recurrence, optional end date
 - `event_skips` — single occurrences removed from a repeating event
+- `balance_overrides` — (calendar, date) → manually set end-of-day balance
 
 ## Balance engine
 
@@ -65,7 +66,11 @@ balance(day) = starting balance + Σ occurrences on [balance date, day]
 ```
 
 Monthly/quarterly/yearly series that start on the 29th–31st fall on the last
-day of shorter months. The ledger endpoint caches its result under a key that
+day of shorter months. `monthly_day` repeats on the exact day number and skips
+months that do not have it; `monthly_nth` repeats on the same weekday occurrence
+as the start date (e.g. first Monday; a start on day 29–31 means the last one).
+A balance override sets a day's end-of-day balance after its transactions; the
+following days continue from it. The ledger endpoint caches its result under a key that
 includes the calendar's `version`, which is incremented in the same
 transaction as every write — caches are never stale and need no explicit
 invalidation, on one node or many.
@@ -118,5 +123,7 @@ All endpoints are JSON under `/api`. Errors are `{"error": "message"}`.
 | GET / POST | `/calendars/:id/events` | `{title, amount, category, note, start_date, recurrence, until_date}` |
 | PUT / DELETE | `/calendars/:id/events/:eventId` | edit / delete the whole series |
 | POST | `/calendars/:id/events/:eventId/skip` | `{date}` removes one occurrence |
+| GET | `/calendars/:id/balances` | manually set balances `[{date, balance}]` |
+| PUT / DELETE | `/calendars/:id/balances/:date` | set `{balance}` (cents) / remove the end-of-day balance of that day |
 | GET | `/calendars/:id/ledger?from=&to=` | days with entries and running balance (max 400 days) |
 | GET | `/healthz`, `/readyz` | liveness / readiness (outside `/api`) |

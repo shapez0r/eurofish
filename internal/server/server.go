@@ -105,6 +105,9 @@ func New(cfg *config.Config, database *db.DB, c cache.Cache, log *slog.Logger, v
 	priv.Delete("/calendars/:id/events/:eventId", s.deleteEvent)
 	priv.Post("/calendars/:id/events/:eventId/skip", s.skipOccurrence)
 
+	priv.Get("/calendars/:id/balances", s.listBalances)
+	priv.Put("/calendars/:id/balances/:date", s.setBalance)
+	priv.Delete("/calendars/:id/balances/:date", s.deleteBalance)
 	priv.Get("/calendars/:id/ledger", s.ledger)
 
 	api.Use(func(c *fiber.Ctx) error {

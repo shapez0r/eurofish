@@ -6,7 +6,9 @@ balance for every single day ahead. Share a calendar with your partner or
 household so everyone plans with the same numbers.
 
 - 📅 Month view with planned transactions and the end-of-day balance on every day
-- 🔁 Repeating transactions: daily, weekly, every 2 weeks, monthly, quarterly, yearly (with optional end date), plus "remove this day only"
+- 🔁 Repeating transactions: daily, weekly, every 2 weeks, monthly, quarterly, yearly, monthly on an exact day number (e.g. every 15th) or on a weekday of the month (e.g. every first Monday) — with optional end date, plus "remove this day only"
+- ✏️ Set the actual balance on any specific day; the following days continue from it
+- 🖱️ Right-click a day for quick actions: open day, add expense/income, set or remove the balance on that day
 - 🚨 Days that would go negative are highlighted; monthly start/income/expenses/end/lowest summary
 - 👥 Multiple calendars per user, shared with others as *editor* or *viewer*
 - 🔐 Self-service accounts (e-mail + password), optionally limited to your home network; Google/Apple sign-in is prepared in the data model
@@ -41,6 +43,57 @@ sudo ./scripts/install.sh   # binary -> /usr/local/bin, data -> /var/lib/eurofis
 
 > Find your machine's LAN address with `ip addr` (Linux), `ipconfig` (Windows)
 > or `ipconfig getifaddr en0` (macOS) and allow TCP 8080 in its firewall.
+
+## Updating: recompile and restart for a new version
+
+Your data is kept across updates (Docker volume, `./data` or
+`/var/lib/eurofish`), and database migrations run automatically when the new
+version starts. Back up the SQLite file first if you want to be safe, e.g.
+`cp data/eurofish.db data/eurofish.db.bak` (binary) or
+`docker compose cp eurofish:/data/eurofish.db ./eurofish.db.bak` (Docker).
+
+First put the new source in place (`git pull`, or extract the new archive over
+the old folder), then use the commands for the way you run eurofish:
+
+**Docker (single node)** — rebuild the image and recreate the container:
+
+```sh
+docker compose up -d --build
+docker compose logs -f eurofish     # optional: watch it start (Ctrl+C to stop watching)
+```
+
+**Docker (scaled-out stack)**:
+
+```sh
+docker compose -f compose.scale.yaml up -d --build
+```
+
+**Plain binary** — stop the running server (Ctrl+C in its terminal), then:
+
+```sh
+make build && ./bin/eurofish        # or simply: make run
+```
+
+**systemd service** — rebuild, replace the installed binary and restart:
+
+```sh
+make build
+sudo install -m 0755 bin/eurofish /usr/local/bin/eurofish
+sudo systemctl restart eurofish
+systemctl status eurofish           # should say "active (running)"
+```
+
+**Kubernetes** — build and push a new image (`make docker`, then tag/push to your
+registry) and run `kubectl rollout restart deployment/eurofish`.
+
+**MicroVM** — `make rootfs` creates a fresh root filesystem image. If your
+SQLite data lives inside the old rootfs, copy `/data/eurofish.db` out of it
+before replacing the image (or use MariaDB), then boot the VM with the new image.
+
+Finally reload the page in your browser with **Ctrl+F5** (**Cmd+Shift+R** on
+macOS) so it picks up the new web UI instead of a cached copy. You can check
+which version is running with `./bin/eurofish version` or by opening
+`http://<server>:8080/healthz`.
 
 ## Deployment options
 

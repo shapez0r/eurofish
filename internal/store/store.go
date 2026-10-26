@@ -412,6 +412,77 @@ func (s *Store) DeleteEvent(ctx context.Context, calendarID, eventID string) err
 	return tx.Commit()
 }
 
+// ---------- balance overrides ----------
+
+// BalanceOverride is a manually set end-of-day balance for one date.
+type BalanceOverride struct {
+	Date    string `json:"date"`
+	Balance int64  `json:"balance"` // cents
+}
+
+// ListBalanceOverrides returns all manually set balances of a calendar.
+func (s *Store) ListBalanceOverrides(ctx context.Context, calendarID string) ([]BalanceOverride, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT balance_date, balance FROM balance_overrides WHERE calendar_id = ? ORDER BY balance_date`, calendarID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []BalanceOverride{}
+	for rows.Next() {
+		var b BalanceOverride
+		if err := rows.Scan(&b.Date, &b.Balance); err != nil {
+			return nil, err
+		}
+		out = append(out, b)
+	}
+	return out, rows.Err()
+}
+
+// SetBalanceOverride sets (or replaces) the end-of-day balance of a date.
+func (s *Store) SetBalanceOverride(ctx context.Context, calendarID, date string, balance int64, userID string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	// Delete + insert keeps the SQL portable between SQLite and MariaDB.
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM balance_overrides WHERE calendar_id = ? AND balance_date = ?`, calendarID, date); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO balance_overrides (calendar_id, balance_date, balance, updated_by, updated_at) VALUES (?, ?, ?, ?, ?)`,
+		calendarID, date, balance, userID, time.Now().Unix()); err != nil {
+		return err
+	}
+	if err := bumpVersion(ctx, tx, calendarID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// DeleteBalanceOverride removes a manually set balance.
+func (s *Store) DeleteBalanceOverride(ctx context.Context, calendarID, date string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	res, err := tx.ExecContext(ctx,
+		`DELETE FROM balance_overrides WHERE calendar_id = ? AND balance_date = ?`, calendarID, date)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	if err := bumpVersion(ctx, tx, calendarID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // SkipOccurrence removes a single occurrence of a (recurring) event.
 func (s *Store) SkipOccurrence(ctx context.Context, calendarID, eventID, date string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
