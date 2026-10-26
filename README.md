@@ -11,6 +11,7 @@ household so everyone plans with the same numbers.
 - 🖱️ Right-click a day for quick actions: open day, add expense/income, set or remove the balance on that day
 - 🚨 Days that would go negative are highlighted; monthly start/income/expenses/end/lowest summary
 - 👥 Multiple calendars per user, shared with others by e-mail as *editor* or *viewer* (people without an account yet get access as soon as they sign up)
+- 📤 Export a calendar as a JSON file from the **Share** dialog — on iPhone/Android "Send file…" opens the share sheet so you can send it directly via Gmail, Telegram, etc. (needs HTTPS; over plain HTTP the file is downloaded instead)
 - 🔐 Self-service accounts (e-mail + password), optionally limited to your home network; Google/Apple sign-in is prepared in the data model
 - 📦 One static binary with the web UI embedded — runs as a `FROM scratch` container, a systemd service or as PID 1 in a microVM
 - 📈 Scales from a laptop (SQLite + in-process cache) to many stateless replicas (MariaDB + Valkey) by changing environment variables only

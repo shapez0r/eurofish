@@ -275,6 +275,9 @@ dialog h2 { padding-bottom: .4rem; border-bottom: 2px dashed var(--line); }
 .member-list .who span { overflow: hidden; text-overflow: ellipsis; }
 .member-list .who { flex: 1; }
 .member-list .role-select { width: auto; padding: .25rem .4rem; font-size: .85rem; }
+.export-box { display: flex; flex-direction: column; gap: .4rem; border-top: 2px dashed var(--line); padding-top: .6rem; }
+.export-box h3 { margin: 0; font-family: var(--pixel); -webkit-font-smoothing: none; font-weight: normal; font-size: 16px; line-height: 1.25; text-transform: uppercase; color: var(--muted); }
+.export-box .dialog-actions { margin-top: 0; }
 
 .toast {
   position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg);

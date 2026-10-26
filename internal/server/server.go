@@ -115,6 +115,7 @@ func New(cfg *config.Config, database *db.DB, c cache.Cache, log *slog.Logger, v
 	priv.Put("/calendars/:id/balances/:date", s.setBalance)
 	priv.Delete("/calendars/:id/balances/:date", s.deleteBalance)
 	priv.Get("/calendars/:id/ledger", s.ledger)
+	priv.Get("/calendars/:id/export", s.exportCalendar)
 
 	api.Use(func(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusNotFound, "unknown API endpoint")

@@ -788,6 +788,7 @@
   async function openShare() {
     showError($("#share-error"), "");
     $("#share-form").reset();
+    prepareExport();
     const owner = state.calendar.role === "owner";
     $("#share-add").hidden = !owner;
     $("#share-submit").hidden = !owner;
@@ -885,6 +886,90 @@
     }
   }
 
+  // ---------- export as a JSON file (send via Gmail, Telegram, ...) ----------
+  // The export is fetched when the share dialog opens, so that "Send file…" can
+  // call the system share sheet directly from the tap (iOS Safari only allows
+  // it during a user gesture, which an awaited network request would end).
+  let exportFile = null; // { calId, promise, file }
+
+  function exportFileName(name) {
+    const slug = String(name || "calendar").normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "calendar";
+    return `eurofish-${slug}-${iso(new Date())}.json`;
+  }
+
+  function canShareFiles() {
+    if (!navigator.share || !navigator.canShare || typeof File !== "function") return false;
+    try {
+      return navigator.canShare({ files: [new File(["{}"], "test.json", { type: "application/json" })] });
+    } catch { return false; }
+  }
+
+  function prepareExport() {
+    const cal = state.calendar;
+    $("#export-share").hidden = !canShareFiles();
+    const entry = { calId: cal.id, file: null, promise: null };
+    entry.promise = api("GET", `/calendars/${cal.id}/export`).then((data) => {
+      const text = JSON.stringify(data, null, 2) + "\n";
+      entry.file = new File([text], exportFileName(data.calendar && data.calendar.name), { type: "application/json" });
+      return entry.file;
+    });
+    entry.promise.catch(() => { /* reported when the user exports */ });
+    exportFile = entry;
+  }
+
+  async function getExportFile() {
+    if (!exportFile || !state.calendar || exportFile.calId !== state.calendar.id) prepareExport();
+    if (exportFile.file) return exportFile.file;
+    try {
+      return await exportFile.promise;
+    } catch (e) {
+      exportFile = null; // try again on the next tap
+      throw e;
+    }
+  }
+
+  function downloadFile(file) {
+    const url = URL.createObjectURL(file);
+    const a = h("a", { href: url, download: file.name, hidden: true });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
+
+  async function onExportShare() {
+    showError($("#share-error"), "");
+    try {
+      const file = exportFile && exportFile.file && exportFile.calId === (state.calendar && state.calendar.id)
+        ? exportFile.file : await getExportFile();
+      if (!canShareFiles() || !navigator.canShare({ files: [file] })) {
+        downloadFile(file);
+        toast("Downloaded");
+        return;
+      }
+      await navigator.share({ files: [file], title: file.name });
+    } catch (e) {
+      if (e && e.name === "AbortError") return; // share sheet dismissed
+      if (e && e.name === "NotAllowedError" && exportFile && exportFile.file) {
+        downloadFile(exportFile.file);
+        toast("Sharing not allowed here — downloaded instead");
+        return;
+      }
+      showError($("#share-error"), (e && e.message) || "Export failed");
+    }
+  }
+
+  async function onExportDownload() {
+    showError($("#share-error"), "");
+    try {
+      downloadFile(await getExportFile());
+      toast("Downloaded");
+    } catch (e) {
+      showError($("#share-error"), e.message);
+    }
+  }
+
   // ---------- wiring ----------
 
   function changeMonth(delta, swiped) {
@@ -926,6 +1011,8 @@
 
     $("#share-calendar").addEventListener("click", () => openShare().catch((e) => toast(e.message)));
     $("#share-form").addEventListener("submit", onShareSubmit);
+    $("#export-share").addEventListener("click", onExportShare);
+    $("#export-download").addEventListener("click", onExportDownload);
 
     $("#add-event").addEventListener("click", () => openEvent(null, null, iso(new Date())));
     $("#day-add").addEventListener("click", () => openEvent(null, null, state.dayOpen));

@@ -134,4 +134,5 @@ All endpoints are JSON under `/api`. Errors are `{"error": "message"}`.
 | GET | `/calendars/:id/balances` | manually set balances `[{date, balance}]` |
 | PUT / DELETE | `/calendars/:id/balances/:date` | set `{balance}` (cents) / remove the end-of-day balance of that day |
 | GET | `/calendars/:id/ledger?from=&to=` | days with entries and running balance (max 400 days) |
+| GET | `/calendars/:id/export` | JSON snapshot `{format: "eurofish-calendar", version, calendar, events, balances}` (amounts in cents, no member e-mails) |
 | GET | `/healthz`, `/readyz` | liveness / readiness (outside `/api`) |
