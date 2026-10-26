@@ -308,6 +308,24 @@
     $("#sidebar").classList.toggle("open", open);
     $("#menu-toggle").setAttribute("aria-expanded", String(open));
   }
+
+  // Desktop: the sidebar can be hidden to the left as well (e.g. when the
+  // browser only has half of the screen), giving the calendar the full width.
+  // The choice is remembered.
+  function desktopSidebarHidden() { return $("#app-view").classList.contains("sidebar-hidden"); }
+  function setDesktopSidebar(hidden) {
+    $("#app-view").classList.toggle("sidebar-hidden", hidden);
+    localStorageSet("sidebar", hidden ? "hidden" : "shown");
+    syncMenuToggle();
+  }
+  function syncMenuToggle() {
+    const open = isNarrow() ? $("#sidebar").classList.contains("open") : !desktopSidebarHidden();
+    $("#menu-toggle").setAttribute("aria-expanded", String(open));
+  }
+  function toggleSidebar() {
+    if (isNarrow()) setSidebar(!$("#sidebar").classList.contains("open"));
+    else setDesktopSidebar(!desktopSidebarHidden());
+  }
   // Hides the sidebar; returns true if it was open as an overlay (phones).
   function closeSidebar() {
     const open = $("#sidebar").classList.contains("open");
@@ -1050,7 +1068,9 @@
       changeMonth(0);
       state.slide = diff;
     });
-    $("#menu-toggle").addEventListener("click", () => setSidebar(!$("#sidebar").classList.contains("open")));
+    $("#menu-toggle").addEventListener("click", toggleSidebar);
+    $("#app-view").classList.toggle("sidebar-hidden", localStorageGet("sidebar") === "hidden");
+    syncMenuToggle();
 
     $("#new-calendar").addEventListener("click", () => openCalendarDialog(false));
     $("#empty-create").addEventListener("click", () => openCalendarDialog(false));
@@ -1100,7 +1120,7 @@
     }
     // ...and the transaction amounts when crossing the phone breakpoint.
     if (narrowScreen) {
-      const onNarrow = () => { renderMonthTitle(); if (state.ledger && state.calendar) renderGrid(); };
+      const onNarrow = () => { syncMenuToggle(); renderMonthTitle(); if (state.ledger && state.calendar) renderGrid(); };
       if (narrowScreen.addEventListener) narrowScreen.addEventListener("change", onNarrow);
       else if (narrowScreen.addListener) narrowScreen.addListener(onNarrow);
     }

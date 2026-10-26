@@ -180,7 +180,7 @@ textarea { resize: vertical; }
 .month-nav { display: flex; align-items: center; gap: .4rem; }
 .month-nav h1 { min-width: 15rem; text-align: center; }
 .toolbar-actions { margin-left: auto; display: flex; gap: .5rem; flex-wrap: wrap; }
-.menu-btn { display: none; }
+.menu-btn { flex-shrink: 0; }
 .icon-text .ico { display: none; }
 .empty {
   margin: auto; text-align: center; display: flex; flex-direction: column; gap: .75rem; align-items: center; padding: 2rem;
@@ -283,6 +283,18 @@ dialog h2 { padding-bottom: .4rem; border-bottom: 2px dashed var(--line); }
   position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg);
   padding: .55rem 1rem; border: 2px solid var(--edge); border-radius: 0; box-shadow: 4px 4px 0 var(--accent);
   font-size: 16px; z-index: 10; max-width: calc(100vw - 2rem);
+}
+
+/* desktop: the menu button hides the sidebar to the left (like on phones),
+   so the calendar gets the full width, e.g. in a half-screen browser window */
+@media (min-width: 821px) {
+  .sidebar {
+    transition: margin-left .25s cubic-bezier(.25, .8, .25, 1), visibility 0s linear 0s;
+  }
+  .app.sidebar-hidden .sidebar {
+    margin-left: -260px; visibility: hidden;
+    transition: margin-left .25s cubic-bezier(.25, .8, .25, 1), visibility 0s linear .25s;
+  }
 }
 
 /* medium screens: day balances stay in the pixel font; app.js shortens them
