@@ -131,6 +131,7 @@ All endpoints are JSON under `/api`. Errors are `{"error": "message"}`.
 | GET / POST | `/calendars/:id/events` | `{title, amount, category, note, start_date, recurrence, until_date}` |
 | PUT / DELETE | `/calendars/:id/events/:eventId` | edit / delete the whole series |
 | POST | `/calendars/:id/events/:eventId/skip` | `{date}` removes one occurrence |
+| POST | `/calendars/:id/events/:eventId/occurrence` | `{date, title, amount, category, note, start_date}` changes only that occurrence: it is removed from the series and a one-off transaction is created instead |
 | GET | `/calendars/:id/balances` | manually set balances `[{date, balance}]` |
 | PUT / DELETE | `/calendars/:id/balances/:date` | set `{balance}` (cents) / remove the end-of-day balance of that day |
 | GET | `/calendars/:id/ledger?from=&to=` | days with entries and running balance (max 400 days) |

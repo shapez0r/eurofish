@@ -23,6 +23,7 @@
     editing: null, // { event, occurrenceDate }
     dayOpen: null,
     balanceDate: null, // day whose balance is being set
+    pendingSave: null, // edit of a repeating transaction waiting for "this day only" / "all repeats"
     slide: 0, // direction of the next month-change animation
     swipeIn: 0, // direction of a swipe whose new month still has to scroll in
     swiping: false, // a swipe month change is animating
@@ -595,17 +596,59 @@
       recurrence: f.recurrence.value,
       until_date: f.recurrence.value === "none" ? "" : f.until_date.value,
     };
+    const existing = state.editing && state.editing.event;
+    const occurrenceDate = state.editing && state.editing.occurrenceDate;
+    // A repeating transaction opened from one of its days: ask whether the
+    // changes are for that day only or for all repeats.
+    if (existing && existing.recurrence !== "none" && occurrenceDate) {
+      openScope(existing, occurrenceDate, body);
+      return;
+    }
+    await saveEvent(existing ? "all" : "new", existing, body);
+  }
+
+  // scope: "new" (create), "all" (the whole series) or "one" (only the day
+  // occurrenceDate of a repeating transaction).
+  async function saveEvent(scope, existing, body, occurrenceDate) {
     const calId = state.calendar.id;
     try {
-      const existing = state.editing && state.editing.event;
-      if (existing) await api("PUT", `/calendars/${calId}/events/${existing.id}`, body);
-      else await api("POST", `/calendars/${calId}/events`, body);
+      if (scope === "one") {
+        // If the date was not changed, the single transaction stays on its own day.
+        const date = body.start_date === existing.start_date ? occurrenceDate : body.start_date;
+        await api("POST", `/calendars/${calId}/events/${existing.id}/occurrence`,
+          { ...body, start_date: date, recurrence: "none", until_date: "", date: occurrenceDate });
+      } else if (scope === "all") {
+        await api("PUT", `/calendars/${calId}/events/${existing.id}`, body);
+      } else {
+        await api("POST", `/calendars/${calId}/events`, body);
+      }
       $("#event-dialog").close();
-      toast("Saved");
+      toast(scope === "one" ? "Saved for this day only" : scope === "all" ? "Saved for all repeats" : "Saved");
       await refresh();
     } catch (e) {
       showError($("#event-error"), e.message);
     }
+  }
+
+  function openScope(existing, occurrenceDate, body) {
+    state.pendingSave = { existing, occurrenceDate, body };
+    // Changing how it repeats only makes sense for the whole series.
+    const repeatChanged = body.recurrence !== existing.recurrence ||
+      (body.until_date || "") !== (existing.until_date || "");
+    const day = parseISO(occurrenceDate).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+    $("#scope-text").textContent = `Apply your changes to "${existing.title}" on ${day} only, or to all repeats?`;
+    $("#scope-one").disabled = repeatChanged;
+    $("#scope-hint").hidden = !repeatChanged;
+    $("#scope-dialog").showModal();
+    (repeatChanged ? $("#scope-all") : $("#scope-one")).focus();
+  }
+
+  async function onScopeChoice(scope) {
+    const p = state.pendingSave;
+    if (!p) return;
+    state.pendingSave = null;
+    $("#scope-dialog").close();
+    await saveEvent(scope, p.existing, p.body, p.occurrenceDate);
   }
 
   async function onEventDelete() {
@@ -1094,6 +1137,9 @@
     $("#event-form").start_date.addEventListener("change", updateRepeatLabels);
     $("#event-delete").addEventListener("click", onEventDelete);
     $("#event-skip").addEventListener("click", onEventSkip);
+    $("#scope-one").addEventListener("click", () => onScopeChoice("one"));
+    $("#scope-all").addEventListener("click", () => onScopeChoice("all"));
+    $("#scope-dialog").addEventListener("close", () => { state.pendingSave = null; });
     $("#day-dialog").addEventListener("close", () => { state.dayOpen = null; });
     $("#day-set-balance").addEventListener("click", () => openBalance(state.dayOpen));
     $("#balance-form").addEventListener("submit", onBalanceSubmit);

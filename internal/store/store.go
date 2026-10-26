@@ -10,11 +10,16 @@ import (
 	"time"
 
 	"eurofish/internal/db"
+	"eurofish/internal/finance"
 )
 
 var (
 	ErrNotFound = errors.New("not found")
 	ErrConflict = errors.New("already exists")
+
+	// ErrNotOccurrence is returned when a date is not an occurrence of a
+	// repeating transaction.
+	ErrNotOccurrence = errors.New("not an occurrence of this repeating transaction")
 )
 
 const (
@@ -689,6 +694,69 @@ func (s *Store) SkipOccurrence(ctx context.Context, calendarID, eventID, date st
 		if _, err := tx.ExecContext(ctx, `INSERT INTO event_skips (event_id, skip_date) VALUES (?, ?)`, eventID, date); err != nil {
 			return err
 		}
+	}
+	if err := bumpVersion(ctx, tx, calendarID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// DetachOccurrence changes a single occurrence of a repeating event: the
+// occurrence on date is removed from the series and e (a one-off event) is
+// created in its place. Both happen in one transaction.
+func (s *Store) DetachOccurrence(ctx context.Context, calendarID, eventID, date string, e *Event) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var startDate, recurrence string
+	var until sql.NullString
+	err = tx.QueryRowContext(ctx,
+		`SELECT start_date, recurrence, until_date FROM events WHERE id = ? AND calendar_id = ?`,
+		eventID, calendarID).Scan(&startDate, &recurrence, &until)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if recurrence == finance.None || recurrence == "" {
+		return ErrNotOccurrence
+	}
+	start, err := finance.ParseDate(startDate)
+	if err != nil {
+		return err
+	}
+	day, err := finance.ParseDate(date)
+	if err != nil {
+		return ErrNotOccurrence
+	}
+	var untilDate time.Time
+	if until.Valid && until.String != "" {
+		if untilDate, err = finance.ParseDate(until.String); err != nil {
+			return err
+		}
+	}
+	if len(finance.Occurrences(start, untilDate, recurrence, day, day)) == 0 {
+		return ErrNotOccurrence
+	}
+	var n int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM event_skips WHERE event_id = ? AND skip_date = ?`, eventID, date).Scan(&n); err != nil {
+		return err
+	}
+	if n > 0 {
+		return ErrNotOccurrence // already removed from the series
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO event_skips (event_id, skip_date) VALUES (?, ?)`, eventID, date); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO events (id, calendar_id, title, amount, category, note, start_date, recurrence, until_date, created_by, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		e.ID, calendarID, e.Title, e.Amount, e.Category, e.Note, e.StartDate, e.Recurrence,
+		nullable(e.UntilDate), e.CreatedBy, e.CreatedAt, e.UpdatedAt); err != nil {
+		return err
 	}
 	if err := bumpVersion(ctx, tx, calendarID); err != nil {
 		return err

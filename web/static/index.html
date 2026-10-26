@@ -125,6 +125,21 @@
     </form>
   </dialog>
 
+  <!-- Edit a repeating transaction: this day only or all repeats -->
+  <dialog id="scope-dialog">
+    <div class="dialog-body">
+      <h2>Edit repeating transaction</h2>
+      <p id="scope-text" class="muted">Apply your changes to this day only, or to all repeats?</p>
+      <p id="scope-hint" class="muted small" hidden>The repeat settings were changed, so the changes can only be applied to all repeats.</p>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" data-close>Cancel</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="scope-one">This day only</button>
+        <button type="button" class="btn primary" id="scope-all">All repeats</button>
+      </div>
+    </div>
+  </dialog>
+
   <!-- Day dialog -->
   <dialog id="day-dialog">
     <div class="dialog-body">

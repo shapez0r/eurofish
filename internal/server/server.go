@@ -111,6 +111,7 @@ func New(cfg *config.Config, database *db.DB, c cache.Cache, log *slog.Logger, v
 	priv.Put("/calendars/:id/events/:eventId", s.updateEvent)
 	priv.Delete("/calendars/:id/events/:eventId", s.deleteEvent)
 	priv.Post("/calendars/:id/events/:eventId/skip", s.skipOccurrence)
+	priv.Post("/calendars/:id/events/:eventId/occurrence", s.updateOccurrence)
 
 	priv.Get("/calendars/:id/balances", s.listBalances)
 	priv.Put("/calendars/:id/balances/:date", s.setBalance)

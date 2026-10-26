@@ -453,6 +453,50 @@ func (s *Server) skipOccurrence(c *fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
+// updateOccurrence changes only one occurrence of a repeating transaction:
+// that day is removed from the series and a one-off transaction with the new
+// values is created instead (on start_date, usually the same day). The rest
+// of the series is left unchanged.
+func (s *Server) updateOccurrence(c *fiber.Ctx) error {
+	cal, err := s.calendarFor(c, store.RoleOwner, store.RoleEditor)
+	if err != nil {
+		return err
+	}
+	var in struct {
+		eventInput
+		Date string `json:"date"`
+	}
+	if err := c.BodyParser(&in); err != nil {
+		return badRequest("invalid JSON body")
+	}
+	if err := validDate("date", in.Date); err != nil {
+		return err
+	}
+	ev := in.eventInput
+	if strings.TrimSpace(ev.StartDate) == "" {
+		ev.StartDate = in.Date
+	}
+	// A single occurrence never repeats.
+	ev.Recurrence = finance.None
+	ev.UntilDate = ""
+	if err := ev.validate(); err != nil {
+		return err
+	}
+	now := time.Now().Unix()
+	e := &store.Event{
+		ID: auth.NewID(), CalendarID: cal.ID, Title: ev.Title, Amount: ev.Amount, Category: ev.Category,
+		Note: ev.Note, StartDate: ev.StartDate, Recurrence: ev.Recurrence,
+		CreatedBy: currentUser(c).ID, CreatedAt: now, UpdatedAt: now, Skips: []string{},
+	}
+	if err := s.store.DetachOccurrence(c.UserContext(), cal.ID, c.Params("eventId"), in.Date, e); err != nil {
+		if errors.Is(err, store.ErrNotOccurrence) {
+			return badRequest("this day is not an occurrence of the repeating transaction")
+		}
+		return err
+	}
+	return c.Status(fiber.StatusCreated).JSON(e)
+}
+
 // ---------- balance overrides ----------
 
 func (s *Server) listBalances(c *fiber.Ctx) error {
