@@ -331,7 +331,7 @@
     }
     $("#add-event").hidden = !canEdit();
     $("#edit-calendar").hidden = !canEdit();
-    $("#month-title").textContent = state.month.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+    renderMonthTitle();
 
     const gridStart = addDays(state.month, -((state.month.getDay() + 6) % 7));
     const gridEnd = addDays(gridStart, 41);
@@ -953,7 +953,7 @@
     }
     // ...and the transaction amounts when crossing the phone breakpoint.
     if (narrowScreen) {
-      const onNarrow = () => { if (state.ledger && state.calendar) renderGrid(); };
+      const onNarrow = () => { renderMonthTitle(); if (state.ledger && state.calendar) renderGrid(); };
       if (narrowScreen.addEventListener) narrowScreen.addEventListener("change", onNarrow);
       else if (narrowScreen.addListener) narrowScreen.addListener(onNarrow);
     }
