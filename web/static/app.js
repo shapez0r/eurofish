@@ -70,6 +70,11 @@
   // tiny pixel font, with a compact amount on its own line.
   const narrowScreen = window.matchMedia ? window.matchMedia("(max-width: 820px)") : null;
   function isNarrow() { return !!(narrowScreen && narrowScreen.matches); }
+  // Phones: transaction names in day cells are cut to 10 characters + "…".
+  function shortTitle(t) {
+    const chars = Array.from(t);
+    return chars.length > 10 ? chars.slice(0, 10).join("") + "…" : t;
+  }
   function cellMoney(cents) {
     if (!compactCells || !compactCells.matches) return money(cents);
     const abs = Math.abs(cents) / 100;
@@ -366,7 +371,7 @@
         h("span", { class: "num" }, date.getDate()),
         h("span", { class: "items" },
           day.entries.map((e, i) => h("span", { class: `item ${e.amount >= 0 ? "inc" : "exp"}${i >= 3 ? " extra" : ""}`, title: `${e.title} ${money(e.amount)}` },
-            h("span", { class: "t" }, e.title), " ",
+            h("span", { class: "t" }, isNarrow() ? shortTitle(e.title) : e.title), " ",
             h("span", { class: "a" }, isNarrow() ? cellMoney(e.amount) : money(e.amount, { maximumFractionDigits: 0, minimumFractionDigits: 0 })))),
           !isNarrow() && day.entries.length > 3 ? h("span", { class: "more" }, `+${day.entries.length - 3} more`) : null),
         // Phones: "+x more" sits outside the clipped item list so it is always visible.
