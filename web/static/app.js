@@ -66,6 +66,10 @@
   // Day cells are narrow on tablets and phones: there the balance is shown
   // compactly (e.g. "€1.2k", "€850") so it fits in the pixel font.
   const compactCells = window.matchMedia ? window.matchMedia("(max-width: 1100px)") : null;
+  // Phones: the sidebar is an overlay and every transaction is listed in the
+  // tiny pixel font, with a compact amount on its own line.
+  const narrowScreen = window.matchMedia ? window.matchMedia("(max-width: 820px)") : null;
+  function isNarrow() { return !!(narrowScreen && narrowScreen.matches); }
   function cellMoney(cents) {
     if (!compactCells || !compactCells.matches) return money(cents);
     const abs = Math.abs(cents) / 100;
@@ -287,9 +291,21 @@
   async function selectCalendar(id) {
     state.calendar = state.calendars.find((c) => c.id === id) || null;
     if (state.calendar) localStorageSet("calendar", state.calendar.id);
-    $("#sidebar").classList.remove("open");
+    closeSidebar();
     renderCalendarList();
     await refresh();
+  }
+
+  // ---------- sidebar (overlay on small screens) ----------
+  function setSidebar(open) {
+    $("#sidebar").classList.toggle("open", open);
+    $("#menu-toggle").setAttribute("aria-expanded", String(open));
+  }
+  // Hides the sidebar; returns true if it was open as an overlay (phones).
+  function closeSidebar() {
+    const open = $("#sidebar").classList.contains("open");
+    if (open) setSidebar(false);
+    return open && isNarrow();
   }
 
   function canEdit() { return state.calendar && state.calendar.role !== "viewer"; }
@@ -339,19 +355,19 @@
       if (day.balance < 0) classes.push("negative");
       if (day.entries.length) classes.push("has-items");
       if (day.override !== undefined && day.override !== null) classes.push("override");
-      const shown = day.entries.slice(0, 3);
       const label = `${date.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}, ` +
         `${day.entries.length} transactions, balance ${money(day.balance)}` +
         (classes.includes("override") ? " (set manually)" : "");
       return h("button", {
         type: "button", class: classes.join(" "), "aria-label": label, "aria-haspopup": "menu",
-        onclick: () => openDay(day.date),
+        onclick: () => { if (closeSidebar()) return; openDay(day.date); },
         oncontextmenu: (e) => openDayMenu(e, day.date),
       },
         h("span", { class: "num" }, date.getDate()),
         h("span", { class: "items" },
-          shown.map((e) => h("span", { class: `item ${e.amount >= 0 ? "inc" : "exp"}`, title: `${e.title} ${money(e.amount)}` },
-            `${e.title} ${money(e.amount, { maximumFractionDigits: 0, minimumFractionDigits: 0 })}`)),
+          day.entries.map((e, i) => h("span", { class: `item ${e.amount >= 0 ? "inc" : "exp"}${i >= 3 ? " extra" : ""}`, title: `${e.title} ${money(e.amount)}` },
+            h("span", { class: "t" }, e.title), " ",
+            h("span", { class: "a" }, isNarrow() ? cellMoney(e.amount) : money(e.amount, { maximumFractionDigits: 0, minimumFractionDigits: 0 })))),
           day.entries.length > 3 ? h("span", { class: "more" }, `+${day.entries.length - 3} more`) : null),
         h("span", { class: "bal", title: classes.includes("override") ? "Balance set manually" : null }, cellMoney(day.balance)));
     });
@@ -820,7 +836,7 @@
       changeMonth(0);
       state.slide = diff;
     });
-    $("#menu-toggle").addEventListener("click", () => $("#sidebar").classList.toggle("open"));
+    $("#menu-toggle").addEventListener("click", () => setSidebar(!$("#sidebar").classList.contains("open")));
 
     $("#new-calendar").addEventListener("click", () => openCalendarDialog(false));
     $("#empty-create").addEventListener("click", () => openCalendarDialog(false));
@@ -862,6 +878,12 @@
       const onCompact = () => { if (state.ledger && state.calendar) renderGrid(); };
       if (compactCells.addEventListener) compactCells.addEventListener("change", onCompact);
       else if (compactCells.addListener) compactCells.addListener(onCompact);
+    }
+    // ...and the transaction amounts when crossing the phone breakpoint.
+    if (narrowScreen) {
+      const onNarrow = () => { if (state.ledger && state.calendar) renderGrid(); };
+      if (narrowScreen.addEventListener) narrowScreen.addEventListener("change", onNarrow);
+      else if (narrowScreen.addListener) narrowScreen.addListener(onNarrow);
     }
     document.querySelectorAll("[data-close]").forEach((b) =>
       b.addEventListener("click", () => b.closest("dialog").close()));
@@ -930,8 +952,8 @@
       sidebar.style.transform = "";
       const w = sidebar.offsetWidth || 260;
       const fast = Date.now() - st < 300 && Math.abs(dragX) > 30;
-      if (was === "close") sidebar.classList.toggle("open", !(dragX < -w / 3 || (fast && dragX < 0)));
-      else sidebar.classList.toggle("open", dragX > w / 3 || (fast && dragX > 0));
+      if (was === "close") setSidebar(!(dragX < -w / 3 || (fast && dragX < 0)));
+      else setSidebar(dragX > w / 3 || (fast && dragX > 0));
     };
     document.addEventListener("touchend", end, { passive: true });
     document.addEventListener("touchcancel", end, { passive: true });
