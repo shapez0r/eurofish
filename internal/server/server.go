@@ -56,7 +56,7 @@ func New(cfg *config.Config, database *db.DB, c cache.Cache, log *slog.Logger, v
 		ReadTimeout:           15 * time.Second,
 		WriteTimeout:          30 * time.Second,
 		IdleTimeout:           120 * time.Second,
-		BodyLimit:             256 * 1024,
+		BodyLimit:             1024 * 1024, // calendar imports can be larger than other requests
 		ProxyHeader:           cfg.ProxyHeader,
 		EnableIPValidation:    true,
 		ErrorHandler:          s.errorHandler,
@@ -94,6 +94,7 @@ func New(cfg *config.Config, database *db.DB, c cache.Cache, log *slog.Logger, v
 
 	priv.Get("/calendars", s.listCalendars)
 	priv.Post("/calendars", s.createCalendar)
+	priv.Post("/calendars/import", s.importCalendar)
 	priv.Get("/calendars/:id", s.getCalendar)
 	priv.Patch("/calendars/:id", s.updateCalendar)
 	priv.Delete("/calendars/:id", s.deleteCalendar)

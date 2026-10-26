@@ -73,6 +73,7 @@
         <h2>Create your first calendar</h2>
         <p class="muted">A calendar holds a starting balance and the money that comes in and goes out.</p>
         <button type="button" class="btn primary" id="empty-create">Create calendar</button>
+        <button type="button" class="btn ghost" id="empty-import">Import from file&hellip;</button>
       </div>
       <div id="calendar" class="calendar" aria-live="polite">
         <div class="weekdays" id="weekdays"></div>
@@ -168,6 +169,13 @@
       <label>Balance date <input name="start_date" type="date" required></label>
       <p class="muted small">The starting balance is what you have on the balance date. Everything after it adds up from there.</p>
       <p id="calendar-error" class="error" role="alert" hidden></p>
+      <div class="export-box" id="import-box">
+        <h3>Import from file</h3>
+        <p class="muted small">Create a calendar from a eurofish .json export (settings, transactions, repeats and set balances).</p>
+        <div class="dialog-actions">
+          <button type="button" class="btn ghost" id="import-choose">Choose .json file&hellip;</button>
+        </div>
+      </div>
       <div class="dialog-actions">
         <button type="button" class="btn danger ghost" id="calendar-delete" hidden>Delete calendar</button>
         <span class="spacer"></span>
@@ -208,6 +216,8 @@
       </div>
     </form>
   </dialog>
+
+  <input type="file" id="import-file" accept=".json,application/json" hidden>
 
   <div id="day-menu" class="ctx-menu" role="menu" aria-label="Day actions" hidden></div>
 

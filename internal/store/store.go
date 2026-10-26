@@ -189,6 +189,56 @@ func (s *Store) CreateCalendar(ctx context.Context, c *Calendar) error {
 	return tx.Commit()
 }
 
+// ImportCalendar creates a calendar owned by c.OwnerID together with its
+// transactions (including removed days) and manually set balances, all in
+// one transaction: either everything is imported or nothing.
+func (s *Store) ImportCalendar(ctx context.Context, c *Calendar, events []Event, balances []BalanceOverride) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO calendars (id, name, currency, start_date, start_balance, owner_id, version, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
+		c.ID, c.Name, c.Currency, c.StartDate, c.StartBalance, c.OwnerID, c.CreatedAt); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO calendar_members (calendar_id, user_id, role, created_at) VALUES (?, ?, ?, ?)`,
+		c.ID, c.OwnerID, RoleOwner, c.CreatedAt); err != nil {
+		return err
+	}
+	for _, e := range events {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO events (id, calendar_id, title, amount, category, note, start_date, recurrence, until_date, created_by, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			e.ID, c.ID, e.Title, e.Amount, e.Category, e.Note, e.StartDate, e.Recurrence,
+			nullable(e.UntilDate), e.CreatedBy, e.CreatedAt, e.UpdatedAt); err != nil {
+			return err
+		}
+		for _, d := range e.Skips {
+			if _, err := tx.ExecContext(ctx,
+				`INSERT INTO event_skips (event_id, skip_date) VALUES (?, ?)`, e.ID, d); err != nil {
+				return err
+			}
+		}
+	}
+	for _, b := range balances {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO balance_overrides (calendar_id, balance_date, balance, updated_by, updated_at) VALUES (?, ?, ?, ?, ?)`,
+			c.ID, b.Date, b.Balance, c.OwnerID, c.CreatedAt); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	c.Version = 1
+	c.Role = RoleOwner
+	return nil
+}
+
 const calendarCols = `c.id, c.name, c.currency, c.start_date, c.start_balance, c.owner_id, o.display_name, c.version, c.created_at, m.role`
 
 // calendarFrom joins the requesting user's membership and the owner's account.

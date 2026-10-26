@@ -742,6 +742,7 @@
     f.start_balance.value = c ? plainAmount(c.start_balance) : "";
     f.start_date.value = c ? c.start_date : iso(new Date());
     $("#calendar-delete").hidden = !c || c.role !== "owner";
+    $("#import-box").hidden = !!c;
     f.dataset.mode = c ? "edit" : "create";
     $("#calendar-dialog").showModal();
     f.name.focus();
@@ -970,6 +971,54 @@
     }
   }
 
+  // ---------- import from a JSON export file ----------
+  // Creates a new calendar (owned by the current user) from a file produced
+  // by "Send file…" / "Download .json".
+  const MAX_IMPORT_BYTES = 1024 * 1024;
+
+  function chooseImportFile() {
+    const input = $("#import-file");
+    input.value = "";
+    input.click();
+  }
+
+  function importFailed(msg) {
+    if ($("#calendar-dialog").open) showError($("#calendar-error"), msg);
+    else toast(msg);
+  }
+
+  async function onImportFile(ev) {
+    const file = ev.target.files && ev.target.files[0];
+    if (!file) return;
+    if ($("#calendar-dialog").open) showError($("#calendar-error"), "");
+    if (file.size > MAX_IMPORT_BYTES) return importFailed("This file is too large to import (max 1 MB).");
+    let data;
+    try {
+      data = JSON.parse(await file.text());
+    } catch {
+      return importFailed("This file is not a valid JSON file.");
+    }
+    if (!data || typeof data !== "object" || data.format !== "eurofish-calendar") {
+      return importFailed("This file is not a eurofish calendar export.");
+    }
+    const buttons = [$("#import-choose"), $("#empty-import")];
+    buttons.forEach((b) => { b.disabled = true; });
+    try {
+      const res = await api("POST", "/calendars/import", data);
+      if ($("#calendar-dialog").open) $("#calendar-dialog").close();
+      closeSidebar();
+      localStorageSet("calendar", res.calendar.id);
+      await loadCalendars(res.calendar.id);
+      const n = res.events;
+      toast(`Imported "${res.calendar.name}" with ${n} transaction${n === 1 ? "" : "s"}`);
+    } catch (e) {
+      importFailed(e.message);
+    } finally {
+      buttons.forEach((b) => { b.disabled = false; });
+      ev.target.value = "";
+    }
+  }
+
   // ---------- wiring ----------
 
   function changeMonth(delta, swiped) {
@@ -1005,6 +1054,9 @@
 
     $("#new-calendar").addEventListener("click", () => openCalendarDialog(false));
     $("#empty-create").addEventListener("click", () => openCalendarDialog(false));
+    $("#empty-import").addEventListener("click", chooseImportFile);
+    $("#import-choose").addEventListener("click", chooseImportFile);
+    $("#import-file").addEventListener("change", onImportFile);
     $("#edit-calendar").addEventListener("click", () => openCalendarDialog(true));
     $("#calendar-form").addEventListener("submit", onCalendarSubmit);
     $("#calendar-delete").addEventListener("click", onCalendarDelete);
