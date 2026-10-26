@@ -291,9 +291,11 @@ dialog h2 { padding-bottom: .4rem; border-bottom: 2px dashed var(--line); }
   .sidebar .brand { padding-left: 2.6rem; }
   .sidebar {
     position: fixed; inset: 0 auto 0 0; z-index: 5; transform: translateX(-100%);
-    transition: transform .2s steps(5, end); box-shadow: none;
+    /* smooth slide; the shadow stays until the menu is fully out of view */
+    transition: transform .25s cubic-bezier(.25, .8, .25, 1), box-shadow 0s linear .25s; box-shadow: none;
+    will-change: transform;
   }
-  .sidebar.open { transform: none; }
+  .sidebar.open { transform: none; transition: transform .25s cubic-bezier(.25, .8, .25, 1), box-shadow 0s; }
   /* the hard shadow only while visible, so it does not peek in at the screen edge */
   .sidebar.open, .sidebar.dragging { box-shadow: var(--shadow); }
   .month-nav h1 { min-width: 0; font-size: 16px; }
@@ -371,7 +373,7 @@ dialog.closing::backdrop { animation: ef-fade-out .16s steps(3, end) forwards; }
 .grid.slide-next { animation: ef-slide-from-right .24s var(--ease); }
 .grid.slide-prev { animation: ef-slide-from-left .24s var(--ease); }
 .grid.fade { animation: ef-fade-in .2s var(--ease); }
-.calendar { touch-action: pan-y; }
+.calendar { touch-action: pan-y; overflow-x: hidden; overscroll-behavior-x: none; }
 .sidebar.dragging { transition: none !important; }
 .summary-grid dd { transition: color var(--dur) steps(2, end); }
 

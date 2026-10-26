@@ -24,6 +24,8 @@
     dayOpen: null,
     balanceDate: null, // day whose balance is being set
     slide: 0, // direction of the next month-change animation
+    swipeIn: 0, // direction of a swipe whose new month still has to scroll in
+    swiping: false, // a swipe month change is animating
   };
 
   // ---------- utilities ----------
@@ -381,8 +383,64 @@
     const grid = $("#grid");
     grid.replaceChildren(...cells);
     const slide = state.slide;
+    const swipeIn = state.swipeIn;
     state.slide = 0;
+    state.swipeIn = 0;
+    if (swipeIn) { slideGridIn(grid, swipeIn); return; }
+    resetGridPosition(grid);
     animate(grid, slide > 0 ? "slide-next" : slide < 0 ? "slide-prev" : "fade");
+  }
+
+  // ---------- horizontal month scrolling (swipe) ----------
+  // The grid follows the finger; on release the old month scrolls out and the
+  // new one scrolls in from the other side.
+  const SWIPE_EASE = "cubic-bezier(.25, .8, .25, 1)";
+
+  function gridWidth() {
+    const cal = $("#calendar");
+    return (cal && cal.clientWidth) || window.innerWidth || 360;
+  }
+
+  function moveGrid(grid, x, ms) {
+    const w = gridWidth();
+    grid.style.transition = ms ? `transform ${ms}ms ${SWIPE_EASE}, opacity ${ms}ms ${SWIPE_EASE}` : "none";
+    grid.style.transform = `translate3d(${Math.round(x)}px, 0, 0)`;
+    grid.style.opacity = String(Math.max(0.3, 1 - (Math.abs(x) / w) * 0.7));
+  }
+
+  function resetGridPosition(grid) {
+    grid.style.transition = "";
+    grid.style.transform = "";
+    grid.style.opacity = "";
+  }
+
+  let swipeTimer = null;
+  function slideGridIn(grid, dir) {
+    clearTimeout(swipeTimer);
+    grid.classList.remove("slide-next", "slide-prev", "fade");
+    if (reducedMotion()) { resetGridPosition(grid); state.swiping = false; return; }
+    moveGrid(grid, dir * gridWidth(), 0);
+    void grid.offsetWidth; // start from the far side
+    moveGrid(grid, 0, 280);
+    swipeTimer = setTimeout(() => { resetGridPosition(grid); state.swiping = false; }, 300);
+  }
+
+  // Scrolls the current month out (dir 1 = to the left, next month) and loads the new one.
+  function commitSwipe(dir) {
+    const grid = $("#grid");
+    state.swiping = true;
+    clearTimeout(swipeTimer);
+    const ms = reducedMotion() ? 0 : 180;
+    moveGrid(grid, -dir * gridWidth(), ms);
+    swipeTimer = setTimeout(() => changeMonth(dir, true), ms);
+  }
+
+  // Not far enough: the month scrolls back into place.
+  function cancelSwipe() {
+    const grid = $("#grid");
+    clearTimeout(swipeTimer);
+    moveGrid(grid, 0, reducedMotion() ? 0 : 200);
+    swipeTimer = setTimeout(() => resetGridPosition(grid), 220);
   }
 
   function renderSummary() {
@@ -821,11 +879,18 @@
 
   // ---------- wiring ----------
 
-  function changeMonth(delta) {
+  function changeMonth(delta, swiped) {
     state.month = new Date(state.month.getFullYear(), state.month.getMonth() + delta, 1);
     state.slide = delta;
+    state.swipeIn = swiped ? delta : 0;
     state.dayOpen = null;
-    refresh().catch((e) => toast(e.message));
+    refresh().catch((e) => {
+      // never leave the grid scrolled out of view
+      state.swipeIn = 0;
+      state.swiping = false;
+      resetGridPosition($("#grid"));
+      toast(e.message);
+    });
   }
 
   function wire() {
@@ -916,17 +981,85 @@
     let sx = 0, sy = 0, st = 0, tracking = null, dragX = 0;
     const narrow = () => window.matchMedia("(max-width: 820px)").matches;
 
+    const grid = $("#grid");
+
+    // Month swipe: the grid follows the finger horizontally, like a scroller.
+    let sw = null; // { x, y, dx, lock, samples: [[time, x]] }
+    let suppressClick = false;
+    const swipeAllowed = () => !state.swiping && !!state.calendar && !$("#app-view").hidden &&
+      !document.querySelector("dialog[open]") && !(narrow() && sidebar.classList.contains("open"));
     cal.addEventListener("touchstart", (e) => {
-      if (e.touches.length !== 1) return;
-      sx = e.touches[0].clientX; sy = e.touches[0].clientY; st = Date.now();
+      sw = null;
+      if (e.touches.length !== 1 || !swipeAllowed()) return;
+      const x = e.touches[0].clientX;
+      if (x < 24 && narrow()) return; // edge swipe opens the sidebar instead
+      sw = { x, y: e.touches[0].clientY, dx: 0, lock: false, samples: [[Date.now(), x]] };
     }, { passive: true });
-    cal.addEventListener("touchend", (e) => {
-      const t = e.changedTouches[0];
-      const dx = t.clientX - sx, dy = t.clientY - sy;
-      if (Date.now() - st > 600 || Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-      if (sx < 24 && dx > 0 && narrow()) return; // edge swipe opens the sidebar instead
-      changeMonth(dx < 0 ? 1 : -1);
-    }, { passive: true });
+    cal.addEventListener("touchmove", (e) => {
+      if (!sw) return;
+      if (e.touches.length !== 1) { if (sw.lock) cancelSwipe(); sw = null; return; }
+      const x = e.touches[0].clientX, y = e.touches[0].clientY;
+      const dx = x - sw.x, dy = y - sw.y;
+      if (!sw.lock) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) < 8) return;
+        if (Math.abs(dx) < Math.abs(dy) * 1.2) { sw = null; return; } // vertical scroll
+        sw.lock = true;
+        grid.classList.remove("slide-next", "slide-prev", "fade");
+        clearTimeout(swipeTimer);
+        closeDayMenu();
+      }
+      if (e.cancelable) e.preventDefault(); // keep the page still while dragging
+      sw.dx = dx;
+      sw.samples.push([Date.now(), x]);
+      if (sw.samples.length > 6) sw.samples.shift();
+      moveGrid(grid, dx, 0);
+    }, { passive: false });
+    const swipeEnd = (e) => {
+      const s = sw;
+      sw = null;
+      if (!s || !s.lock) return;
+      suppressClick = true; // the lifted finger must not open a day
+      setTimeout(() => { suppressClick = false; }, 400);
+      if (e.type === "touchcancel") { cancelSwipe(); return; }
+      const [t0, x0] = s.samples[0];
+      const [t1, x1] = s.samples[s.samples.length - 1];
+      const v = t1 > t0 ? (x1 - x0) / (t1 - t0) : 0; // px per ms
+      const w = gridWidth();
+      const flick = Math.abs(v) > 0.35 && Math.abs(s.dx) > 30 && Math.sign(v) === Math.sign(s.dx);
+      if (Math.abs(s.dx) > w * 0.25 || flick) commitSwipe(s.dx < 0 ? 1 : -1);
+      else cancelSwipe();
+    };
+    cal.addEventListener("touchend", swipeEnd, { passive: true });
+    cal.addEventListener("touchcancel", swipeEnd, { passive: true });
+    cal.addEventListener("click", (e) => {
+      if (!suppressClick) return;
+      suppressClick = false;
+      e.preventDefault();
+      e.stopPropagation();
+    }, true);
+
+    // Trackpads: a horizontal two-finger swipe scrolls the months the same way.
+    let wheelX = 0, wheelIdle = null, wheelLock = 0;
+    cal.addEventListener("wheel", (e) => {
+      if (e.ctrlKey || Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+      e.preventDefault(); // no browser back/forward gesture
+      const now = Date.now();
+      if (state.swiping || now < wheelLock || !swipeAllowed()) { wheelLock = now + 250; return; } // swallow inertia
+      const w = gridWidth();
+      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? w : 1;
+      if (!wheelX) { grid.classList.remove("slide-next", "slide-prev", "fade"); clearTimeout(swipeTimer); closeDayMenu(); }
+      wheelX = Math.max(-w, Math.min(w, wheelX - e.deltaX * unit));
+      clearTimeout(wheelIdle);
+      if (Math.abs(wheelX) > w * 0.25) {
+        const dir = wheelX < 0 ? 1 : -1;
+        wheelX = 0;
+        wheelLock = now + 250;
+        commitSwipe(dir);
+        return;
+      }
+      moveGrid(grid, wheelX, 0);
+      wheelIdle = setTimeout(() => { wheelX = 0; cancelSwipe(); }, 160);
+    }, { passive: false });
 
     document.addEventListener("touchstart", (e) => {
       if (e.touches.length !== 1 || !narrow() || $("#app-view").hidden || document.querySelector("dialog[open]")) return;
