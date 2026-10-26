@@ -29,6 +29,7 @@ type exportEvent struct {
 	Note       string   `json:"note"`
 	StartDate  string   `json:"start_date"`
 	Recurrence string   `json:"recurrence"`
+	Interval   int      `json:"interval,omitempty"` // X for "repeat every X weeks"
 	UntilDate  string   `json:"until_date,omitempty"`
 	Skips      []string `json:"skips"`
 }
@@ -79,7 +80,7 @@ func (s *Server) exportCalendar(c *fiber.Ctx) error {
 		}
 		out.Events = append(out.Events, exportEvent{
 			Title: e.Title, Amount: e.Amount, Category: e.Category, Note: e.Note,
-			StartDate: e.StartDate, Recurrence: e.Recurrence, UntilDate: e.UntilDate, Skips: skips,
+			StartDate: e.StartDate, Recurrence: e.Recurrence, Interval: e.Interval, UntilDate: e.UntilDate, Skips: skips,
 		})
 	}
 	return c.JSON(out)

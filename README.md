@@ -6,7 +6,7 @@ balance for every single day ahead. Share a calendar with your partner or
 household so everyone plans with the same numbers.
 
 - 📅 Month view with planned transactions and the end-of-day balance on every day
-- 🔁 Repeating transactions: daily, weekly, every 2 weeks, monthly, quarterly, yearly, monthly on an exact day number (e.g. every 15th) or on a weekday of the month (e.g. every first Monday) — with optional end date, plus "remove this day only"
+- 🔁 Repeating transactions: daily, weekly, every 2 weeks, every X weeks (any number of weeks), monthly, quarterly, yearly, monthly on an exact day number (e.g. every 15th) or on a weekday of the month (e.g. every first Monday) — with optional end date, plus "remove this day only"
 - ✏️ Set the actual balance on any specific day — also before the calendar's balance date; the following days continue from it
 - 🖱️ Right-click a day for quick actions: open day, add expense/income, set or remove the balance on that day
 - 🚨 Days that would go negative are highlighted; monthly start/income/expenses/end/lowest summary

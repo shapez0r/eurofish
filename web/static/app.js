@@ -5,7 +5,7 @@
   const $ = (sel) => document.querySelector(sel);
   const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   const RECURRENCE_LABEL = {
-    none: "", daily: "daily", weekly: "weekly", biweekly: "every 2 weeks",
+    none: "", daily: "daily", weekly: "weekly", biweekly: "every 2 weeks", weeks: "every X weeks",
     monthly: "monthly", quarterly: "quarterly", yearly: "yearly",
     monthly_day: "monthly on this day number", monthly_nth: "monthly on this weekday",
   };
@@ -536,11 +536,13 @@
       f.category.value = ev.category;
       f.start_date.value = ev.start_date;
       f.recurrence.value = ev.recurrence;
+      f.interval.value = String(ev.interval || 1);
       f.until_date.value = ev.until_date || "";
       f.note.value = ev.note;
     } else {
       f.start_date.value = newDate || iso(new Date());
       f.recurrence.value = "none";
+      f.interval.value = "1";
     }
     $("#event-delete").hidden = !ev || readOnly;
     $("#event-delete").textContent = ev && ev.recurrence !== "none" ? "Delete all repeats" : "Delete";
@@ -577,7 +579,19 @@
   }
 
   function updateUntil() {
-    $("#until-field").hidden = $("#event-form").recurrence.value === "none";
+    const f = $("#event-form");
+    $("#until-field").hidden = f.recurrence.value === "none";
+    $("#interval-field").hidden = f.recurrence.value !== "weeks";
+    // Disabled while hidden so an unused value never blocks saving.
+    f.interval.disabled = f.recurrence.value !== "weeks" || !canEdit();
+  }
+  // "Repeat every X weeks": X must be a whole number from 1 to 520; returns NaN otherwise.
+  const MAX_WEEKS_INTERVAL = 520;
+  function parseInterval(raw) {
+    const s = String(raw || "").trim();
+    if (!/^\d+$/.test(s)) return NaN;
+    const n = Number(s);
+    return n >= 1 && n <= MAX_WEEKS_INTERVAL ? n : NaN;
   }
 
   async function onEventSubmit(ev) {
@@ -587,6 +601,8 @@
     if (!f.title.value.trim()) return showError($("#event-error"), "Please enter a title.");
     if (!Number.isFinite(cents) || cents === 0) return showError($("#event-error"), "Please enter an amount, e.g. 49.90");
     if (!f.start_date.value) return showError($("#event-error"), "Please pick a date.");
+    const interval = f.recurrence.value === "weeks" ? parseInterval(f.interval.value) : 1;
+    if (!Number.isFinite(interval)) return showError($("#event-error"), `Please enter how many weeks between repeats (a whole number from 1 to ${MAX_WEEKS_INTERVAL}).`);
     const body = {
       title: f.title.value,
       amount: f.kind.value === "income" ? Math.abs(cents) : -Math.abs(cents),
@@ -594,6 +610,7 @@
       note: f.note.value,
       start_date: f.start_date.value,
       recurrence: f.recurrence.value,
+      interval,
       until_date: f.recurrence.value === "none" ? "" : f.until_date.value,
     };
     const existing = state.editing && state.editing.event;
@@ -616,7 +633,7 @@
         // If the date was not changed, the single transaction stays on its own day.
         const date = body.start_date === existing.start_date ? occurrenceDate : body.start_date;
         await api("POST", `/calendars/${calId}/events/${existing.id}/occurrence`,
-          { ...body, start_date: date, recurrence: "none", until_date: "", date: occurrenceDate });
+          { ...body, start_date: date, recurrence: "none", interval: 1, until_date: "", date: occurrenceDate });
       } else if (scope === "all") {
         await api("PUT", `/calendars/${calId}/events/${existing.id}`, body);
       } else {
@@ -634,6 +651,7 @@
     state.pendingSave = { existing, occurrenceDate, body };
     // Changing how it repeats only makes sense for the whole series.
     const repeatChanged = body.recurrence !== existing.recurrence ||
+      (body.interval || 1) !== (existing.interval || 1) ||
       (body.until_date || "") !== (existing.until_date || "");
     const day = parseISO(occurrenceDate).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
     $("#scope-text").textContent = `Apply your changes to "${existing.title}" on ${day} only, or to all repeats?`;

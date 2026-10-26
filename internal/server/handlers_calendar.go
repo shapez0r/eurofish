@@ -316,6 +316,8 @@ type eventInput struct {
 	Note       string `json:"note"`
 	StartDate  string `json:"start_date"`
 	Recurrence string `json:"recurrence"`
+	// Interval is X for "repeat every X weeks" (recurrence "weeks").
+	Interval   int    `json:"interval"`
 	UntilDate  string `json:"until_date"`
 }
 
@@ -347,7 +349,14 @@ func (in *eventInput) validate() error {
 		return err
 	}
 	if !finance.ValidRecurrence(in.Recurrence) {
-		return badRequest("recurrence must be one of none, daily, weekly, biweekly, monthly, monthly_day, monthly_nth, quarterly, yearly")
+		return badRequest("recurrence must be one of none, daily, weekly, biweekly, weeks, monthly, monthly_day, monthly_nth, quarterly, yearly")
+	}
+	if in.Recurrence == finance.EveryNWeeks {
+		if in.Interval < 1 || in.Interval > finance.MaxWeeksInterval {
+			return badRequest(fmt.Sprintf("interval (repeat every X weeks) must be a whole number from 1 to %d", finance.MaxWeeksInterval))
+		}
+	} else {
+		in.Interval = 1
 	}
 	if in.Recurrence == finance.None {
 		in.UntilDate = ""
@@ -390,7 +399,7 @@ func (s *Server) createEvent(c *fiber.Ctx) error {
 	now := time.Now().Unix()
 	e := &store.Event{
 		ID: auth.NewID(), CalendarID: cal.ID, Title: in.Title, Amount: in.Amount, Category: in.Category,
-		Note: in.Note, StartDate: in.StartDate, Recurrence: in.Recurrence, UntilDate: in.UntilDate,
+		Note: in.Note, StartDate: in.StartDate, Recurrence: in.Recurrence, Interval: in.Interval, UntilDate: in.UntilDate,
 		CreatedBy: currentUser(c).ID, CreatedAt: now, UpdatedAt: now, Skips: []string{},
 	}
 	if err := s.store.CreateEvent(c.UserContext(), e); err != nil {
@@ -413,7 +422,7 @@ func (s *Server) updateEvent(c *fiber.Ctx) error {
 	}
 	e := &store.Event{
 		ID: c.Params("eventId"), CalendarID: cal.ID, Title: in.Title, Amount: in.Amount, Category: in.Category,
-		Note: in.Note, StartDate: in.StartDate, Recurrence: in.Recurrence, UntilDate: in.UntilDate,
+		Note: in.Note, StartDate: in.StartDate, Recurrence: in.Recurrence, Interval: in.Interval, UntilDate: in.UntilDate,
 		UpdatedAt: time.Now().Unix(),
 	}
 	if err := s.store.UpdateEvent(c.UserContext(), e); err != nil {
@@ -485,7 +494,7 @@ func (s *Server) updateOccurrence(c *fiber.Ctx) error {
 	now := time.Now().Unix()
 	e := &store.Event{
 		ID: auth.NewID(), CalendarID: cal.ID, Title: ev.Title, Amount: ev.Amount, Category: ev.Category,
-		Note: ev.Note, StartDate: ev.StartDate, Recurrence: ev.Recurrence,
+		Note: ev.Note, StartDate: ev.StartDate, Recurrence: ev.Recurrence, Interval: ev.Interval,
 		CreatedBy: currentUser(c).ID, CreatedAt: now, UpdatedAt: now, Skips: []string{},
 	}
 	if err := s.store.DetachOccurrence(c.UserContext(), cal.ID, c.Params("eventId"), in.Date, e); err != nil {
@@ -608,7 +617,7 @@ func (s *Server) ledger(c *fiber.Ctx) error {
 		}
 		series = append(series, finance.Series{
 			ID: e.ID, Title: e.Title, Category: e.Category, Amount: e.Amount,
-			Start: start, Until: until, Recurrence: e.Recurrence, Skips: skips,
+			Start: start, Until: until, Recurrence: e.Recurrence, Interval: e.Interval, Skips: skips,
 		})
 	}
 

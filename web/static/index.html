@@ -104,6 +104,7 @@
             <option value="daily">Daily</option>
             <option value="weekly">Weekly</option>
             <option value="biweekly">Every 2 weeks</option>
+            <option value="weeks">Every X weeks</option>
             <option value="monthly">Monthly</option>
             <option value="monthly_day">Monthly on this day number</option>
             <option value="monthly_nth">Monthly on this weekday (e.g. first Monday)</option>
@@ -112,6 +113,9 @@
           </select>
         </label>
       </div>
+      <label id="interval-field" hidden>Repeat every X weeks
+        <span class="interval-input"><input name="interval" type="number" inputmode="numeric" min="1" max="520" step="1" value="1" aria-describedby="interval-unit"><span id="interval-unit">weeks</span></span>
+      </label>
       <label id="until-field">Repeat until (optional) <input name="until_date" type="date"></label>
       <label>Note <textarea name="note" rows="2" maxlength="2000"></textarea></label>
       <p id="event-error" class="error" role="alert" hidden></p>

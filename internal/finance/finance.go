@@ -25,14 +25,19 @@ const (
 	// "first Monday" or "third Friday". A start date on day 29-31 (fifth week)
 	// means "last <weekday> of the month".
 	MonthlyNth = "monthly_nth"
+	// EveryNWeeks repeats every X weeks; X is the series' interval.
+	EveryNWeeks = "weeks"
 )
+
+// MaxWeeksInterval is the largest X accepted for "repeat every X weeks".
+const MaxWeeksInterval = 520
 
 // maxOccurrences protects the server from pathological expansions.
 const maxOccurrences = 20_000
 
 func ValidRecurrence(r string) bool {
 	switch r {
-	case None, Daily, Weekly, Biweekly, Monthly, Quarterly, Yearly, MonthlyDay, MonthlyNth:
+	case None, Daily, Weekly, Biweekly, EveryNWeeks, Monthly, Quarterly, Yearly, MonthlyDay, MonthlyNth:
 		return true
 	}
 	return false
@@ -46,6 +51,13 @@ func ParseDate(s string) (time.Time, error) {
 // until is inclusive; a zero until means "forever". Monthly-based series that
 // start on day 29-31 fall on the last day of shorter months.
 func Occurrences(start, until time.Time, recurrence string, from, to time.Time) []time.Time {
+	return OccurrencesEvery(start, until, recurrence, 1, from, to)
+}
+
+// OccurrencesEvery is Occurrences with an interval: for EveryNWeeks the series
+// repeats every interval weeks (values below 1 are treated as 1). The
+// interval is ignored by all other recurrences.
+func OccurrencesEvery(start, until time.Time, recurrence string, interval int, from, to time.Time) []time.Time {
 	end := to
 	if !until.IsZero() && until.Before(end) {
 		end = until
@@ -63,8 +75,14 @@ func Occurrences(start, until time.Time, recurrence string, from, to time.Time) 
 	}
 
 	switch recurrence {
-	case Daily, Weekly, Biweekly:
+	case Daily, Weekly, Biweekly, EveryNWeeks:
 		step := map[string]int{Daily: 1, Weekly: 7, Biweekly: 14}[recurrence]
+		if recurrence == EveryNWeeks {
+			if interval < 1 {
+				interval = 1
+			}
+			step = 7 * interval
+		}
 		i := 0
 		if from.After(start) {
 			i = daysBetween(start, from) / step
@@ -174,6 +192,7 @@ type Series struct {
 	Start      time.Time
 	Until      time.Time // zero = no end
 	Recurrence string
+	Interval   int // X for "every X weeks"
 	Skips      map[string]bool
 }
 
@@ -257,7 +276,7 @@ func BuildLedgerWithOverrides(calStart time.Time, startBalance int64, series []S
 			return 0
 		}
 		for _, s := range series {
-			for _, d := range Occurrences(s.Start, s.Until, s.Recurrence, a, b) {
+			for _, d := range OccurrencesEvery(s.Start, s.Until, s.Recurrence, s.Interval, a, b) {
 				if !s.Skips[d.Format(DateLayout)] {
 					sum += s.Amount
 				}
@@ -304,7 +323,7 @@ func BuildLedgerWithOverrides(calStart time.Time, startBalance int64, series []S
 
 	byDay := map[string][]Entry{}
 	for _, s := range series {
-		for _, d := range Occurrences(s.Start, s.Until, s.Recurrence, from, to) {
+		for _, d := range OccurrencesEvery(s.Start, s.Until, s.Recurrence, s.Interval, from, to) {
 			key := d.Format(DateLayout)
 			if s.Skips[key] {
 				continue

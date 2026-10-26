@@ -173,3 +173,23 @@ func TestLedgerOverrideBeforeCalendarStart(t *testing.T) {
 		t.Fatalf("opening = %d closing = %d", l.Opening, l.Closing)
 	}
 }
+
+func TestEveryNWeeks(t *testing.T) {
+	got := dates(OccurrencesEvery(d("2026-01-01"), time.Time{}, EveryNWeeks, 3, d("2026-01-01"), d("2026-03-31")))
+	want := []string{"2026-01-01", "2026-01-22", "2026-02-12", "2026-03-05", "2026-03-26"}
+	if !equal(got, want) {
+		t.Fatalf("got %v want %v", got, want)
+	}
+	// Window starting later in the series, with an end date.
+	got = dates(OccurrencesEvery(d("2026-01-01"), d("2026-03-05"), EveryNWeeks, 3, d("2026-02-01"), d("2026-12-31")))
+	want = []string{"2026-02-12", "2026-03-05"}
+	if !equal(got, want) {
+		t.Fatalf("got %v want %v", got, want)
+	}
+	// Ledger uses the series interval.
+	series := []Series{{ID: "x", Title: "X", Amount: -100, Start: d("2026-01-01"), Recurrence: EveryNWeeks, Interval: 4}}
+	l := BuildLedger(d("2026-01-01"), 1000, series, d("2026-01-01"), d("2026-02-28"))
+	if l.Closing != 1000-3*100 {
+		t.Fatalf("closing = %d", l.Closing)
+	}
+}

@@ -65,6 +65,7 @@ type Event struct {
 	Note       string   `json:"note"`
 	StartDate  string   `json:"start_date"`
 	Recurrence string   `json:"recurrence"`
+	Interval   int      `json:"interval"` // X for "repeat every X weeks" (1 otherwise)
 	UntilDate  string   `json:"until_date,omitempty"`
 	CreatedBy  string   `json:"created_by"`
 	CreatedAt  int64    `json:"created_at"`
@@ -90,6 +91,14 @@ func isDuplicate(err error) bool {
 
 func nullable(s string) sql.NullString {
 	return sql.NullString{String: s, Valid: s != ""}
+}
+
+// intervalOrOne stores 1 for transactions without an explicit interval.
+func intervalOrOne(n int) int {
+	if n < 1 {
+		return 1
+	}
+	return n
 }
 
 // ---------- users ----------
@@ -216,9 +225,9 @@ func (s *Store) ImportCalendar(ctx context.Context, c *Calendar, events []Event,
 	}
 	for _, e := range events {
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO events (id, calendar_id, title, amount, category, note, start_date, recurrence, until_date, created_by, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			e.ID, c.ID, e.Title, e.Amount, e.Category, e.Note, e.StartDate, e.Recurrence,
+			`INSERT INTO events (id, calendar_id, title, amount, category, note, start_date, recurrence, repeat_interval, until_date, created_by, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			e.ID, c.ID, e.Title, e.Amount, e.Category, e.Note, e.StartDate, e.Recurrence, intervalOrOne(e.Interval),
 			nullable(e.UntilDate), e.CreatedBy, e.CreatedAt, e.UpdatedAt); err != nil {
 			return err
 		}
@@ -478,7 +487,7 @@ func (s *Store) AcceptInvites(ctx context.Context, userID, email string) error {
 
 func (s *Store) ListEvents(ctx context.Context, calendarID string) ([]Event, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, calendar_id, title, amount, category, note, start_date, recurrence, until_date, created_by, created_at, updated_at
+		`SELECT id, calendar_id, title, amount, category, note, start_date, recurrence, repeat_interval, until_date, created_by, created_at, updated_at
 		   FROM events WHERE calendar_id = ? ORDER BY start_date, created_at, id`, calendarID)
 	if err != nil {
 		return nil, err
@@ -489,7 +498,7 @@ func (s *Store) ListEvents(ctx context.Context, calendarID string) ([]Event, err
 		var e Event
 		var until sql.NullString
 		if err := rows.Scan(&e.ID, &e.CalendarID, &e.Title, &e.Amount, &e.Category, &e.Note, &e.StartDate,
-			&e.Recurrence, &until, &e.CreatedBy, &e.CreatedAt, &e.UpdatedAt); err != nil {
+			&e.Recurrence, &e.Interval, &until, &e.CreatedBy, &e.CreatedAt, &e.UpdatedAt); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -535,9 +544,9 @@ func (s *Store) CreateEvent(ctx context.Context, e *Event) error {
 	}
 	defer tx.Rollback()
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO events (id, calendar_id, title, amount, category, note, start_date, recurrence, until_date, created_by, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		e.ID, e.CalendarID, e.Title, e.Amount, e.Category, e.Note, e.StartDate, e.Recurrence,
+		`INSERT INTO events (id, calendar_id, title, amount, category, note, start_date, recurrence, repeat_interval, until_date, created_by, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		e.ID, e.CalendarID, e.Title, e.Amount, e.Category, e.Note, e.StartDate, e.Recurrence, intervalOrOne(e.Interval),
 		nullable(e.UntilDate), e.CreatedBy, e.CreatedAt, e.UpdatedAt); err != nil {
 		return err
 	}
@@ -554,9 +563,9 @@ func (s *Store) UpdateEvent(ctx context.Context, e *Event) error {
 	}
 	defer tx.Rollback()
 	res, err := tx.ExecContext(ctx,
-		`UPDATE events SET title = ?, amount = ?, category = ?, note = ?, start_date = ?, recurrence = ?, until_date = ?, updated_at = ?
+		`UPDATE events SET title = ?, amount = ?, category = ?, note = ?, start_date = ?, recurrence = ?, repeat_interval = ?, until_date = ?, updated_at = ?
 		  WHERE id = ? AND calendar_id = ?`,
-		e.Title, e.Amount, e.Category, e.Note, e.StartDate, e.Recurrence, nullable(e.UntilDate), e.UpdatedAt,
+		e.Title, e.Amount, e.Category, e.Note, e.StartDate, e.Recurrence, intervalOrOne(e.Interval), nullable(e.UntilDate), e.UpdatedAt,
 		e.ID, e.CalendarID)
 	if err != nil {
 		return err
@@ -711,10 +720,11 @@ func (s *Store) DetachOccurrence(ctx context.Context, calendarID, eventID, date 
 	}
 	defer tx.Rollback()
 	var startDate, recurrence string
+	var interval int
 	var until sql.NullString
 	err = tx.QueryRowContext(ctx,
-		`SELECT start_date, recurrence, until_date FROM events WHERE id = ? AND calendar_id = ?`,
-		eventID, calendarID).Scan(&startDate, &recurrence, &until)
+		`SELECT start_date, recurrence, repeat_interval, until_date FROM events WHERE id = ? AND calendar_id = ?`,
+		eventID, calendarID).Scan(&startDate, &recurrence, &interval, &until)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrNotFound
 	}
@@ -738,7 +748,7 @@ func (s *Store) DetachOccurrence(ctx context.Context, calendarID, eventID, date 
 			return err
 		}
 	}
-	if len(finance.Occurrences(start, untilDate, recurrence, day, day)) == 0 {
+	if len(finance.OccurrencesEvery(start, untilDate, recurrence, interval, day, day)) == 0 {
 		return ErrNotOccurrence
 	}
 	var n int
@@ -752,9 +762,9 @@ func (s *Store) DetachOccurrence(ctx context.Context, calendarID, eventID, date 
 		return err
 	}
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO events (id, calendar_id, title, amount, category, note, start_date, recurrence, until_date, created_by, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		e.ID, calendarID, e.Title, e.Amount, e.Category, e.Note, e.StartDate, e.Recurrence,
+		`INSERT INTO events (id, calendar_id, title, amount, category, note, start_date, recurrence, repeat_interval, until_date, created_by, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		e.ID, calendarID, e.Title, e.Amount, e.Category, e.Note, e.StartDate, e.Recurrence, intervalOrOne(e.Interval),
 		nullable(e.UntilDate), e.CreatedBy, e.CreatedAt, e.UpdatedAt); err != nil {
 		return err
 	}

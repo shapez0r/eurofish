@@ -53,7 +53,7 @@ identical on SQLite and MariaDB.
 - `calendar_members` — `(calendar, user, role)` with role `owner|editor|viewer`
 - `calendar_invites` — `(calendar, e-mail, role)` shares for people without an
   account yet; turned into `calendar_members` rows when they sign up
-- `events` — title, amount, category, note, start date, recurrence, optional end date
+- `events` — title, amount, category, note, start date, recurrence, repeat interval (X for "every X weeks"), optional end date
 - `event_skips` — single occurrences removed from a repeating event
 - `balance_overrides` — (calendar, date) → manually set end-of-day balance
 
@@ -128,7 +128,7 @@ All endpoints are JSON under `/api`. Errors are `{"error": "message"}`.
 | DELETE | `/calendars/:id/members/:userId` | owner removes, member leaves |
 | GET | `/calendars/:id/invites` | pending shares for e-mails without an account |
 | DELETE | `/calendars/:id/invites/:email` | cancel a pending share (owner) |
-| GET / POST | `/calendars/:id/events` | `{title, amount, category, note, start_date, recurrence, until_date}` |
+| GET / POST | `/calendars/:id/events` | `{title, amount, category, note, start_date, recurrence, interval, until_date}`; `interval` is X (1–520) for recurrence `weeks` (repeat every X weeks) |
 | PUT / DELETE | `/calendars/:id/events/:eventId` | edit / delete the whole series |
 | POST | `/calendars/:id/events/:eventId/skip` | `{date}` removes one occurrence |
 | POST | `/calendars/:id/events/:eventId/occurrence` | `{date, title, amount, category, note, start_date}` changes only that occurrence: it is removed from the series and a one-off transaction is created instead |

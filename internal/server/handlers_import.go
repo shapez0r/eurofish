@@ -73,7 +73,7 @@ func (s *Server) importCalendar(c *fiber.Ctx) error {
 		where := fmt.Sprintf("transaction %d", i+1)
 		ev := eventInput{
 			Title: e.Title, Amount: e.Amount, Category: e.Category, Note: e.Note,
-			StartDate: e.StartDate, Recurrence: e.Recurrence, UntilDate: e.UntilDate,
+			StartDate: e.StartDate, Recurrence: e.Recurrence, Interval: e.Interval, UntilDate: e.UntilDate,
 		}
 		if err := ev.validate(); err != nil {
 			return importError(where, err)
@@ -95,7 +95,7 @@ func (s *Server) importCalendar(c *fiber.Ctx) error {
 		sort.Strings(skips)
 		events = append(events, store.Event{
 			ID: auth.NewID(), CalendarID: cal.ID, Title: ev.Title, Amount: ev.Amount, Category: ev.Category,
-			Note: ev.Note, StartDate: ev.StartDate, Recurrence: ev.Recurrence, UntilDate: ev.UntilDate,
+			Note: ev.Note, StartDate: ev.StartDate, Recurrence: ev.Recurrence, Interval: ev.Interval, UntilDate: ev.UntilDate,
 			CreatedBy: user.ID, CreatedAt: now, UpdatedAt: now, Skips: skips,
 		})
 	}
