@@ -368,7 +368,9 @@
           day.entries.map((e, i) => h("span", { class: `item ${e.amount >= 0 ? "inc" : "exp"}${i >= 3 ? " extra" : ""}`, title: `${e.title} ${money(e.amount)}` },
             h("span", { class: "t" }, e.title), " ",
             h("span", { class: "a" }, isNarrow() ? cellMoney(e.amount) : money(e.amount, { maximumFractionDigits: 0, minimumFractionDigits: 0 })))),
-          day.entries.length > 3 ? h("span", { class: "more" }, `+${day.entries.length - 3} more`) : null),
+          !isNarrow() && day.entries.length > 3 ? h("span", { class: "more" }, `+${day.entries.length - 3} more`) : null),
+        // Phones: "+x more" sits outside the clipped item list so it is always visible.
+        isNarrow() && day.entries.length > 3 ? h("span", { class: "more" }, `+${day.entries.length - 3} more`) : null,
         h("span", { class: "bal", title: classes.includes("override") ? "Balance set manually" : null }, cellMoney(day.balance)));
     });
     const grid = $("#grid");

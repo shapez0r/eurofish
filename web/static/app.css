@@ -301,9 +301,13 @@ dialog h2 { padding-bottom: .4rem; border-bottom: 2px dashed var(--line); }
   .toolbar-actions .primary { margin-left: auto; }
   /* fixed-height day cells (like on desktop): up to 3 transactions, then
      "+x more"; the calendar scrolls if the rows do not fit the screen */
-  .grid { grid-auto-rows: 128px; }
+  .grid { grid-auto-rows: 136px; flex: 0 0 auto; align-items: start; }
   .calendar { overflow-y: auto; }
-  .day .items { overflow: hidden; flex: 1 1 auto; min-height: 0; gap: 2px; }
+  /* explicit height: iOS Safari (e.g. iPhone SE) otherwise lets the button
+     grow with its content instead of keeping the fixed row height */
+  .day { height: 136px; max-height: 136px; min-height: 0; overflow: hidden; }
+  .day .num, .day .bal { flex-shrink: 0; }
+  .day .items { overflow: hidden; flex: 1 1 0; min-height: 0; gap: 2px; }
   .day .item { display: flex; flex-direction: column; flex-shrink: 0; }
   .day .item .t, .day .item .a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .day .more { font-size: 8px; line-height: 1.25; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
