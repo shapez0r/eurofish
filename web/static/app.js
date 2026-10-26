@@ -399,16 +399,17 @@
       },
         h("span", { class: "num" }, date.getDate()),
         h("span", { class: "items" },
-          day.entries.map((e, i) => h("span", { class: `item ${e.amount >= 0 ? "inc" : "exp"}${i >= 3 ? " extra" : ""}`, title: `${e.title} ${money(e.amount)}` },
+          day.entries.map((e) => h("span", { class: `item ${e.amount >= 0 ? "inc" : "exp"}`, title: `${e.title} ${money(e.amount)}` },
             h("span", { class: "t" }, isNarrow() ? shortTitle(e.title) : e.title), " ",
-            h("span", { class: "a" }, isNarrow() ? cellMoney(e.amount) : money(e.amount, { maximumFractionDigits: 0, minimumFractionDigits: 0 })))),
-          !isNarrow() && day.entries.length > 3 ? h("span", { class: "more" }, `+${day.entries.length - 3} more`) : null),
-        // Phones: "+x more" sits outside the clipped item list so it is always visible.
-        isNarrow() && day.entries.length > 3 ? h("span", { class: "more" }, `+${day.entries.length - 3} more`) : null,
+            h("span", { class: "a" }, isNarrow() ? cellMoney(e.amount) : money(e.amount, { maximumFractionDigits: 0, minimumFractionDigits: 0 }))))),
+        // "+x more" sits outside the clipped item list so it is always visible;
+        // fitDayItems() decides how many transactions fit and fills in x.
+        day.entries.length ? h("span", { class: "more", hidden: true }) : null,
         h("span", { class: "bal", title: classes.includes("override") ? "Balance set manually" : null }, cellMoney(day.balance)));
     });
     const grid = $("#grid");
     grid.replaceChildren(...cells);
+    fitAllDays();
     const slide = state.slide;
     const swipeIn = state.swipeIn;
     state.slide = 0;
@@ -416,6 +417,62 @@
     if (swipeIn) { slideGridIn(grid, swipeIn); return; }
     resetGridPosition(grid);
     animate(grid, slide > 0 ? "slide-next" : slide < 0 ? "slide-prev" : "fade");
+  }
+
+  // ---------- "+x more": as many transactions as fit the day box ----------
+  // Shows every transaction of a day that fits completely in its cell and
+  // replaces the rest with "+x more". Runs after each render and whenever the
+  // cells change size (window resize, sidebar toggle, font loaded, ...), on
+  // desktop and on phones alike.
+  function fitDayItems(cell) {
+    const items = cell.querySelector(".items");
+    const more = cell.querySelector(".more");
+    if (!items || !more) return;
+    const list = Array.from(items.children);
+    list.forEach((el) => el.classList.remove("extra"));
+    more.hidden = true;
+    if (!list.length || items.scrollHeight <= items.clientHeight + 1) return;
+    // Not everything fits: reserve the line for "+x more", then keep the
+    // transactions that are still completely visible.
+    more.textContent = `+${list.length} more`;
+    more.hidden = false;
+    const limit = items.getBoundingClientRect().top + items.clientHeight + 0.5;
+    let shown = 0;
+    while (shown < list.length && list[shown].getBoundingClientRect().bottom <= limit) shown++;
+    list.slice(shown).forEach((el) => el.classList.add("extra"));
+    more.textContent = `+${list.length - shown} more`;
+  }
+
+  function fitAllDays() {
+    const grid = $("#grid");
+    if (!grid || !grid.clientHeight) return; // hidden: refitted once it is shown
+    grid.querySelectorAll(".day").forEach(fitDayItems);
+  }
+
+  let fitFrame = 0;
+  function scheduleFit() {
+    if (fitFrame) return;
+    fitFrame = requestAnimationFrame(() => { fitFrame = 0; fitAllDays(); });
+  }
+
+  function watchDaySizes() {
+    const grid = $("#grid");
+    if (window.ResizeObserver) {
+      // The grid's own size changes with the window, the sidebar and the
+      // number of week rows; that is when the day boxes change size too.
+      let last = "";
+      new ResizeObserver(() => {
+        const key = `${grid.clientWidth}x${grid.clientHeight}`;
+        if (key !== last) { last = key; scheduleFit(); }
+      }).observe(grid);
+    }
+    window.addEventListener("resize", scheduleFit);
+    window.addEventListener("orientationchange", scheduleFit);
+    // The pixel font loads asynchronously and changes the line heights.
+    if (document.fonts) {
+      if (document.fonts.ready) document.fonts.ready.then(scheduleFit).catch(() => {});
+      if (document.fonts.addEventListener) document.fonts.addEventListener("loadingdone", scheduleFit);
+    }
   }
 
   // ---------- horizontal month scrolling (swipe) ----------
@@ -1176,6 +1233,7 @@
 
     document.querySelectorAll("dialog").forEach(enhanceDialog);
     wireSwipes();
+    watchDaySizes();
     // Re-render the day balances when crossing the compact-cell breakpoint.
     if (compactCells) {
       const onCompact = () => { if (state.ledger && state.calendar) renderGrid(); };

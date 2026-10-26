@@ -194,7 +194,9 @@ textarea { resize: vertical; }
 .calendar { flex: 1; display: flex; flex-direction: column; padding: .75rem; min-height: 0; }
 .weekdays, .grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
 .weekdays div { font-size: 16px; text-transform: uppercase; color: var(--muted); padding: .2rem .4rem; }
-.grid { flex: 1; grid-auto-rows: minmax(96px, 1fr); }
+/* min-height: 0 keeps the rows at the available height instead of growing
+   with the transactions in them (the overflow becomes "+x more") */
+.grid { flex: 1; grid-auto-rows: minmax(96px, 1fr); min-height: 0; }
 .day {
   background: var(--panel); border: 2px solid var(--line); border-radius: 0; padding: .3rem .4rem;
   display: flex; flex-direction: column; gap: 2px; cursor: pointer; text-align: left; font: inherit; color: inherit;
@@ -212,11 +214,13 @@ textarea { resize: vertical; }
 }
 .day .num { font-size: 16px; line-height: 1.25; align-self: flex-start; }
 .day .items { display: flex; flex-direction: column; gap: 1px; flex: 1; min-height: 0; overflow: hidden; }
-.day .item { font-size: .76rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.day .item { font-size: .76rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
 .day .item.inc { color: var(--income); }
 .day .item.exp { color: var(--expense); }
 .day .item.extra { display: none; }
-.day .more { font-size: .72rem; color: var(--muted); }
+/* "+x more" sits below the item list; app.js shows as many transactions as
+   fit the day box and hides the rest (class "extra"). */
+.day .more { font-size: .72rem; color: var(--muted); flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .day .bal { font-size: 16px; line-height: 1.25; text-align: right; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .day.override .bal { color: var(--text); }
 .day.override .bal::before { content: "= "; color: var(--accent); }
@@ -331,7 +335,7 @@ dialog h2 { padding-bottom: .4rem; border-bottom: 2px dashed var(--line); }
   .icon-text { display: inline-grid; place-items: center; width: 1.75rem; height: 1.75rem; padding: 0 !important; }
   .icon-text .ico { display: block; }
   .icon-text .lbl { display: none; }
-  /* fixed-height, near-square day cells: up to 3 transactions, then
+  /* fixed-height, near-square day cells: as many transactions as fit, then
      "+x more"; the calendar scrolls if the rows do not fit the screen */
   .grid { grid-auto-rows: 80px; flex: 0 0 auto; align-items: start; }
   .calendar { overflow-y: auto; }
