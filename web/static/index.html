@@ -6,6 +6,7 @@
   <meta name="color-scheme" content="light dark">
   <title>eurofish — calendar budgeting</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <script src="theme.js"></script>
   <link rel="stylesheet" href="app.css">
   <script src="app.js" defer></script>
 </head>
@@ -48,6 +49,10 @@
         <ul id="calendar-list" class="cal-list"></ul>
       </div>
       <div class="side-section" id="summary"></div>
+      <div class="side-section theme-picker">
+        <div class="side-head"><h2 id="theme-title">Theme</h2></div>
+        <select id="theme-select" aria-labelledby="theme-title"></select>
+      </div>
       <div class="side-foot">
         <span id="me-name" class="muted small"></span>
         <button type="button" class="btn ghost small" id="logout">Sign out</button>

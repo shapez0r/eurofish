@@ -56,6 +56,168 @@
     --glow: #ff2e97;
   }
 }
+/* ---------- user-selectable themes (theme.js sets <html data-theme="...">) ----------
+   Without data-theme the palette follows the system light/dark setting (above). */
+:root[data-theme="cyber-light"] {
+  color-scheme: light;
+  --bg: #e4e9f4;
+  --bg-dot: #d2daec;
+  --panel: #f6f8ff;
+  --panel-2: #e2e7f6;
+  --text: #0c0f2e;
+  --muted: #545c86;
+  --line: #b3bcdb;
+  --edge: #12163f;
+  --drop: #e3168f;
+  --accent: #0088b0;
+  --accent-text: #ffffff;
+  --income: #008a55;
+  --expense: #d90f5a;
+  --neg-bg: #fbdbe8;
+  --neg-dot: #f3c2d7;
+  --today: #c9f1fb;
+  --glow: #00b8d9;
+}
+:root[data-theme="paper"] {
+  color-scheme: light;
+  --bg: #efe6d2;
+  --bg-dot: #e2d6bc;
+  --panel: #fbf6ea;
+  --panel-2: #eee4cf;
+  --text: #2b2118;
+  --muted: #6f5f4a;
+  --line: #cdbd9c;
+  --edge: #3b2d1f;
+  --drop: #b0825a;
+  --accent: #a8481a;
+  --accent-text: #ffffff;
+  --income: #2f7a3a;
+  --expense: #b3261e;
+  --neg-bg: #f6d9cf;
+  --neg-dot: #edc3b4;
+  --today: #f7e3b5;
+  --glow: #e0a24a;
+}
+:root[data-theme="pink"] {
+  color-scheme: light;
+  --bg: #ffe4f1;
+  --bg-dot: #fbd0e6;
+  --panel: #fff5fa;
+  --panel-2: #ffe1ef;
+  --text: #3d0a2a;
+  --muted: #8f3f6d;
+  --line: #f3b3d4;
+  --edge: #8c1457;
+  --drop: #ff6fb5;
+  --accent: #c81e7a;
+  --accent-text: #ffffff;
+  --income: #12805c;
+  --expense: #c4122f;
+  --neg-bg: #ffd0d8;
+  --neg-dot: #ffb8c5;
+  --today: #ffd1ea;
+  --glow: #ff9ad0;
+}
+:root[data-theme="lavender"] {
+  color-scheme: light;
+  --bg: #ece6fb;
+  --bg-dot: #ddd3f6;
+  --panel: #f8f5ff;
+  --panel-2: #e9e2fa;
+  --text: #1f1240;
+  --muted: #63538f;
+  --line: #c6b8ec;
+  --edge: #3b1f7a;
+  --drop: #9b6cf0;
+  --accent: #6d3fd6;
+  --accent-text: #ffffff;
+  --income: #0f7a52;
+  --expense: #c2185b;
+  --neg-bg: #f8d6e6;
+  --neg-dot: #efc0d6;
+  --today: #ddd0ff;
+  --glow: #b48cff;
+}
+:root[data-theme="cyber-night"] {
+  color-scheme: dark;
+  --bg: #07080f;
+  --bg-dot: #10142a;
+  --panel: #0e1120;
+  --panel-2: #171b33;
+  --text: #d9f7ff;
+  --muted: #7d89b8;
+  --line: #262d52;
+  --edge: #5468ff;
+  --drop: #ff2e97;
+  --accent: #00f0ff;
+  --accent-text: #05060c;
+  --income: #39ff8f;
+  --expense: #ff3d6e;
+  --neg-bg: #22071a;
+  --neg-dot: #380b29;
+  --today: #08283a;
+  --glow: #ff2e97;
+}
+:root[data-theme="terminal"] {
+  color-scheme: dark;
+  --bg: #050a05;
+  --bg-dot: #0b160b;
+  --panel: #0a120a;
+  --panel-2: #112011;
+  --text: #b8ffb8;
+  --muted: #5fa35f;
+  --line: #1d3a1d;
+  --edge: #2fbf4f;
+  --drop: #0f6f28;
+  --accent: #39ff6a;
+  --accent-text: #031203;
+  --income: #7dff9a;
+  --expense: #ff5c4d;
+  --neg-bg: #200806;
+  --neg-dot: #33100c;
+  --today: #0f2e14;
+  --glow: #1f9e3a;
+}
+:root[data-theme="purple"] {
+  color-scheme: dark;
+  --bg: #120a1f;
+  --bg-dot: #1d1233;
+  --panel: #1a1030;
+  --panel-2: #261845;
+  --text: #f0e3ff;
+  --muted: #a58cc9;
+  --line: #3a2862;
+  --edge: #9d6bff;
+  --drop: #7a3cff;
+  --accent: #c38bff;
+  --accent-text: #160a26;
+  --income: #6dfbb4;
+  --expense: #ff6b9a;
+  --neg-bg: #2c0c26;
+  --neg-dot: #42123a;
+  --today: #2e1b55;
+  --glow: #ff7ad9;
+}
+:root[data-theme="rose-night"] {
+  color-scheme: dark;
+  --bg: #14070e;
+  --bg-dot: #22101a;
+  --panel: #1d0b15;
+  --panel-2: #2b1222;
+  --text: #ffe3f1;
+  --muted: #c58aa9;
+  --line: #4a1f38;
+  --edge: #ff5fae;
+  --drop: #a3185f;
+  --accent: #ff7ac0;
+  --accent-text: #1a0610;
+  --income: #6ff5b0;
+  --expense: #ff5d6c;
+  --neg-bg: #33070f;
+  --neg-dot: #4a0c18;
+  --today: #3a1029;
+  --glow: #ffb3d9;
+}
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
 /* iOS Safari inflates text in landscape, which breaks the 8px pixel grid. */
@@ -153,6 +315,7 @@ textarea { resize: vertical; }
 .side-section { display: flex; flex-direction: column; gap: .5rem; }
 .side-head { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px dashed var(--line); padding-bottom: .25rem; }
 .side-head h2 { font-size: 16px; text-transform: uppercase; color: var(--muted); }
+.theme-picker select { width: 100%; }
 .side-foot { margin-top: auto; display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
 .cal-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .cal-list button {

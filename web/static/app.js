@@ -1155,6 +1155,33 @@
     }
   }
 
+  // ---------- colour theme (light/dark, pink, purple, ...) ----------
+  // The themes and the stored choice live in theme.js, which applies the
+  // theme before the page is drawn; this fills the picker in the sidebar.
+  function initThemePicker() {
+    const select = $("#theme-select");
+    const themes = window.EurofishTheme;
+    if (!select) return;
+    if (!themes) { select.closest(".theme-picker").hidden = true; return; }
+    const groups = new Map();
+    const nodes = [];
+    for (const t of themes.list) {
+      const opt = h("option", { value: t.id }, t.label);
+      if (!t.group) { nodes.push(opt); continue; }
+      if (!groups.has(t.group)) {
+        const g = h("optgroup", { label: t.group });
+        groups.set(t.group, g);
+        nodes.push(g);
+      }
+      groups.get(t.group).append(opt);
+    }
+    select.replaceChildren(...nodes);
+    select.value = themes.get();
+    select.addEventListener("change", () => {
+      select.value = themes.set(select.value);
+    });
+  }
+
   // ---------- wiring ----------
 
   function changeMonth(delta, swiped) {
@@ -1172,6 +1199,7 @@
   }
 
   function wire() {
+    initThemePicker();
     $("#tab-login").addEventListener("click", () => setAuthMode("login"));
     $("#tab-signup").addEventListener("click", () => setAuthMode("signup"));
     $("#auth-form").addEventListener("submit", onAuthSubmit);
