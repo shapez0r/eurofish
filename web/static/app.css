@@ -566,6 +566,33 @@ dialog h2 { padding-bottom: .4rem; border-bottom: 2px dashed var(--line); }
   #event-dialog .btn, #day-dialog .btn { font-size: 12px; line-height: 1.25; padding: .3rem .45rem; }
   #event-dialog .dialog-actions, #day-dialog .dialog-actions { gap: .4rem; margin-top: 0; }
   #event-dialog .error { font-size: 12px; margin: 0; }
+  /* The transaction dialog only scrolls up and down: nothing may be wider
+     than the dialog, so it cannot be dragged left/right. iOS Safari gives
+     date inputs and selects an intrinsic minimum width that ignores
+     width: 100%, which made the form overflow sideways. */
+  #event-dialog {
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-x: none;
+    touch-action: pan-y;
+  }
+  #event-dialog form,
+  #event-dialog form > *,
+  #event-dialog label,
+  #event-dialog input,
+  #event-dialog select,
+  #event-dialog textarea {
+    min-width: 0;
+    max-width: 100%;
+  }
+  #event-dialog input[type="date"] {
+    -webkit-appearance: none;
+    appearance: none;
+    display: block;
+    min-height: calc(1.25em + .4rem + 4px);
+    text-align: left;
+  }
+  #event-dialog input[type="date"]::-webkit-date-and-time-value { text-align: left; }
   #day-dialog p { margin: 0; }
   #day-dialog .entry-list { gap: 4px; }
   #day-dialog .entry-list button {
