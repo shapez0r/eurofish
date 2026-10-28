@@ -1317,6 +1317,17 @@
     document.addEventListener("visibilitychange", () => { if (!document.hidden) checkSharedCalendars(); });
 
     document.querySelectorAll("dialog").forEach(enhanceDialog);
+    // Touch: when a dialog closes the browser puts focus back on the tapped day,
+    // which then stays outlined as if it were selected. Drop that focus unless
+    // the last input was a keyboard (keyboard users keep their place).
+    let lastPointer = "";
+    document.addEventListener("pointerdown", (e) => { lastPointer = e.pointerType || ""; }, true);
+    document.addEventListener("keydown", () => { lastPointer = ""; }, true);
+    document.querySelectorAll("dialog").forEach((d) => d.addEventListener("close", () => {
+      if (lastPointer !== "touch" && lastPointer !== "pen") return;
+      const el = document.activeElement;
+      if (el && el.classList && el.classList.contains("day") && !document.querySelector("dialog[open]")) el.blur();
+    }));
     wireSwipes();
     watchDaySizes();
     // Re-render the day balances when crossing the compact-cell breakpoint.
