@@ -157,6 +157,3 @@ the scaling model.
 ## License
 
 MIT — see [LICENSE](LICENSE).
-
-This is a test line.
-Test commit
