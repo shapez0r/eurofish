@@ -207,6 +207,25 @@
 
   // ---------- auth ----------
 
+  // Eye button in the password field: shows the typed password as plain text
+  // and hides it again.
+  function setPasswordVisible(visible) {
+    const input = $("#auth-form").password;
+    const btn = $("#password-toggle");
+    if (!input || !btn) return;
+    input.type = visible ? "text" : "password";
+    btn.setAttribute("aria-pressed", String(visible));
+    const label = t(visible ? "auth.hidePassword" : "auth.showPassword");
+    btn.setAttribute("aria-label", label);
+    btn.title = label;
+  }
+  function togglePasswordVisible() {
+    const input = $("#auth-form").password;
+    const pos = [input.selectionStart, input.selectionEnd];
+    setPasswordVisible(input.type === "password");
+    input.focus();
+    try { input.setSelectionRange(pos[0], pos[1]); } catch { /* ignore */ }
+  }
   function setAuthMode(mode) {
     state.authMode = mode;
     const signup = mode === "signup";
@@ -217,6 +236,7 @@
     $("#name-field").hidden = !signup;
     $("#auth-submit").textContent = t(signup ? "auth.createAccount" : "auth.signIn");
     $("#auth-form").password.autocomplete = signup ? "new-password" : "current-password";
+    setPasswordVisible(false);
     showError($("#auth-error"), "");
   }
 
@@ -226,6 +246,7 @@
     $("#tab-signup").hidden = !state.signupEnabled;
     $("#signup-disabled").hidden = state.signupEnabled;
     if (!state.signupEnabled) setAuthMode("login");
+    setPasswordVisible(false);
     $("#auth-form").email.focus();
   }
 
@@ -241,6 +262,7 @@
       if (state.authMode === "signup" && body.password.length < 8) throw new Error(t("auth.passwordShort"));
       state.user = await api("POST", `/auth/${state.authMode}`, body);
       f.reset();
+      setPasswordVisible(false);
       await enterApp();
     } catch (e) {
       showError($("#auth-error"), e.message);
@@ -1225,6 +1247,7 @@
   function relocalize() {
     I18N.applyStatic();
     $("#auth-submit").textContent = t(state.authMode === "signup" ? "auth.createAccount" : "auth.signIn");
+    setPasswordVisible($("#auth-form").password.type === "text");
     fillThemePicker();
     fillLanguagePicker();
     if ($("#event-form").start_date.value) updateRepeatLabels();
@@ -1260,6 +1283,10 @@
     $("#tab-login").addEventListener("click", () => setAuthMode("login"));
     $("#tab-signup").addEventListener("click", () => setAuthMode("signup"));
     $("#auth-form").addEventListener("submit", onAuthSubmit);
+    $("#password-toggle").addEventListener("click", togglePasswordVisible);
+    // Keep the focus (and the on-screen keyboard) in the password field.
+    $("#password-toggle").addEventListener("pointerdown", (e) => e.preventDefault());
+    setPasswordVisible(false);
     $("#logout").addEventListener("click", logout);
 
     $("#prev-month").addEventListener("click", () => changeMonth(-1));

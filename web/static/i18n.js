@@ -23,6 +23,8 @@
       "auth.signupDisabled": "Account creation is disabled on this server or for your network.",
       "auth.passwordShort": "Password must have at least 8 characters.",
       "auth.signInAgain": "Please sign in again.",
+      "auth.showPassword": "Show password",
+      "auth.hidePassword": "Hide password",
 
       "side.calendars": "Calendars",
       "side.newCalendar": "New calendar",
@@ -217,6 +219,8 @@
       "auth.signupDisabled": "Регистрация отключена на этом сервере или для вашей сети.",
       "auth.passwordShort": "Пароль должен содержать не менее 8 символов.",
       "auth.signInAgain": "Пожалуйста, войдите снова.",
+      "auth.showPassword": "Показать пароль",
+      "auth.hidePassword": "Скрыть пароль",
 
       "side.calendars": "Календари",
       "side.newCalendar": "Новый календарь",
@@ -416,6 +420,8 @@
       "auth.signupDisabled": "La creación de cuentas está desactivada en este servidor o para tu red.",
       "auth.passwordShort": "La contraseña debe tener al menos 8 caracteres.",
       "auth.signInAgain": "Vuelve a iniciar sesión.",
+      "auth.showPassword": "Mostrar contraseña",
+      "auth.hidePassword": "Ocultar contraseña",
 
       "side.calendars": "Calendarios",
       "side.newCalendar": "Nuevo calendario",
