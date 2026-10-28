@@ -3,13 +3,24 @@
   "use strict";
 
   const $ = (sel) => document.querySelector(sel);
-  const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  // Translations and the UI locale (system language by default) live in i18n.js.
+  const I18N = window.EurofishI18n;
+  const t = I18N.t;
+  const tn = I18N.tn;
+  // Every date and amount is formatted with the UI language's locale, so the
+  // month and weekday names always match the rest of the UI.
+  const loc = () => I18N.locale();
+  const fmtDate = (d, opts) => d.toLocaleDateString(loc(), opts);
+  const LONG_DATE = { weekday: "long", day: "numeric", month: "long", year: "numeric" };
+  // Monday-first weekday names in the UI language (2024-01-01 was a Monday).
+  function weekdayNames() {
+    return Array.from({ length: 7 }, (_, i) => fmtDate(new Date(2024, 0, 1 + i), { weekday: "short" }));
+  }
   const RECURRENCE_LABEL = {
     none: "", daily: "daily", weekly: "weekly", biweekly: "every 2 weeks", weeks: "every X weeks",
     monthly: "monthly", quarterly: "quarterly", yearly: "yearly",
     monthly_day: "monthly on this day number", monthly_nth: "monthly on this weekday",
   };
-  const ORDINALS = ["first", "second", "third", "fourth", "last"];
 
   const state = {
     user: null,
@@ -57,7 +68,7 @@
     const currency = state.calendar ? state.calendar.currency : "EUR";
     const whole = cents % 100 === 0 ? { minimumFractionDigits: 0 } : {};
     try {
-      return pixelSafe(new Intl.NumberFormat(undefined, { style: "currency", currency, ...whole, ...opts }).format(cents / 100));
+      return pixelSafe(new Intl.NumberFormat(loc(), { style: "currency", currency, ...whole, ...opts }).format(cents / 100));
     } catch {
       return `${plainAmount(cents)} ${currency}`;
     }
@@ -85,7 +96,7 @@
     const [div, suffix] = Math.round(abs / 100) >= 10000 ? [1e6, "M"] : [1e3, "k"];
     try {
       const currency = state.calendar ? state.calendar.currency : "EUR";
-      const parts = new Intl.NumberFormat(undefined, { style: "currency", currency, minimumFractionDigits: 0, maximumFractionDigits: 1 })
+      const parts = new Intl.NumberFormat(loc(), { style: "currency", currency, minimumFractionDigits: 0, maximumFractionDigits: 1 })
         .formatToParts(cents / 100 / div);
       let last = -1;
       parts.forEach((p, i) => { if (p.type === "integer" || p.type === "fraction") last = i; });
@@ -185,12 +196,12 @@
     if (res.status === 401 && !path.startsWith("/auth/")) {
       state.user = null;
       showAuth();
-      throw new Error("Please sign in again.");
+      throw new Error(t("auth.signInAgain"));
     }
     if (res.status === 204) return null;
     let data = null;
     try { data = await res.json(); } catch { /* empty body */ }
-    if (!res.ok) throw new Error((data && data.error) || `Request failed (${res.status})`);
+    if (!res.ok) throw new Error((data && data.error && I18N.serverError(data.error)) || t("common.requestFailed", { status: res.status }));
     return data;
   }
 
@@ -204,7 +215,7 @@
     $("#tab-login").setAttribute("aria-selected", String(!signup));
     $("#tab-signup").setAttribute("aria-selected", String(signup));
     $("#name-field").hidden = !signup;
-    $("#auth-submit").textContent = signup ? "Create account" : "Sign in";
+    $("#auth-submit").textContent = t(signup ? "auth.createAccount" : "auth.signIn");
     $("#auth-form").password.autocomplete = signup ? "new-password" : "current-password";
     showError($("#auth-error"), "");
   }
@@ -227,7 +238,7 @@
     try {
       const body = { email: f.email.value, password: f.password.value };
       if (state.authMode === "signup") body.display_name = f.display_name.value;
-      if (state.authMode === "signup" && body.password.length < 8) throw new Error("Password must have at least 8 characters.");
+      if (state.authMode === "signup" && body.password.length < 8) throw new Error(t("auth.passwordShort"));
       state.user = await api("POST", `/auth/${state.authMode}`, body);
       f.reset();
       await enterApp();
@@ -287,12 +298,12 @@
         type: "button",
         class: state.calendar && c.id === state.calendar.id ? "active" : "",
         onclick: () => selectCalendar(c.id),
-        title: c.owner_name ? `${c.name} — owned by ${c.owner_name}` : c.name,
+        title: c.owner_name ? t("cal.ownedBy", { name: c.name, owner: c.owner_name }) : c.name,
       },
         h("span", { class: "cal-name" },
           h("span", { class: "name" }, c.name),
-          c.owner_name ? h("span", { class: "owner" }, `by ${c.owner_name}`) : null),
-        c.role !== "owner" ? h("span", { class: "role" }, c.role) : null),
+          c.owner_name ? h("span", { class: "owner" }, t("cal.by", { owner: c.owner_name })) : null),
+        c.role !== "owner" ? h("span", { class: "role" }, t(`cal.role.${c.role}`)) : null),
     )));
   }
 
@@ -374,11 +385,11 @@
     const el = $("#month-title");
     if (!el) return;
     if (!state.calendar) { el.textContent = ""; return; }
-    el.textContent = state.month.toLocaleDateString(undefined, { month: isNarrow() ? "short" : "long", year: "numeric" });
+    el.textContent = I18N.capitalize(fmtDate(state.month, { month: isNarrow() ? "short" : "long", year: "numeric" }));
   }
 
   function renderGrid() {
-    $("#weekdays").replaceChildren(...WEEKDAYS.map((d) => h("div", null, d)));
+    $("#weekdays").replaceChildren(...weekdayNames().map((d) => h("div", null, d)));
     const todayIso = iso(new Date());
     const month = state.month.getMonth();
     const cells = state.ledger.days.map((day) => {
@@ -389,9 +400,11 @@
       if (day.balance < 0) classes.push("negative");
       if (day.entries.length) classes.push("has-items");
       if (day.override !== undefined && day.override !== null) classes.push("override");
-      const label = `${date.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}, ` +
-        `${day.entries.length} transactions, balance ${money(day.balance)}` +
-        (classes.includes("override") ? " (set manually)" : "");
+      const label = t("day.aria", {
+        date: fmtDate(date, { weekday: "long", day: "numeric", month: "long" }),
+        count: tn("day.tx", day.entries.length),
+        amount: money(day.balance),
+      }) + (classes.includes("override") ? t("day.ariaManual") : "");
       return h("button", {
         type: "button", class: classes.join(" "), "aria-label": label, "aria-haspopup": "menu",
         onclick: () => { if (closeSidebar()) return; openDay(day.date); },
@@ -405,7 +418,7 @@
         // "+x more" sits outside the clipped item list so it is always visible;
         // fitDayItems() decides how many transactions fit and fills in x.
         day.entries.length ? h("span", { class: "more", hidden: true }) : null,
-        h("span", { class: "bal", title: classes.includes("override") ? "Balance set manually" : null }, cellMoney(day.balance)));
+        h("span", { class: "bal", title: classes.includes("override") ? t("day.balanceManualTitle") : null }, cellMoney(day.balance)));
     });
     const grid = $("#grid");
     grid.replaceChildren(...cells);
@@ -434,13 +447,13 @@
     if (!list.length || items.scrollHeight <= items.clientHeight + 1) return;
     // Not everything fits: reserve the line for "+x more", then keep the
     // transactions that are still completely visible.
-    more.textContent = `+${list.length} more`;
+    more.textContent = t("day.more", { n: list.length });
     more.hidden = false;
     const limit = items.getBoundingClientRect().top + items.clientHeight + 0.5;
     let shown = 0;
     while (shown < list.length && list[shown].getBoundingClientRect().bottom <= limit) shown++;
     list.slice(shown).forEach((el) => el.classList.add("extra"));
-    more.textContent = `+${list.length - shown} more`;
+    more.textContent = t("day.more", { n: list.length - shown });
   }
 
   function fitAllDays() {
@@ -538,14 +551,14 @@
     const closing = inMonth.length ? inMonth[inMonth.length - 1].balance : opening;
     const row = (label, value, cls) => [h("dt", null, label), h("dd", { class: cls || "" }, value)];
     $("#summary").replaceChildren(
-      h("div", { class: "side-head" }, h("h2", null, "This month")),
+      h("div", { class: "side-head" }, h("h2", null, t("sum.title"))),
       h("dl", { class: "summary-grid" },
-        row("Start", money(opening)),
-        row("Income", `+${money(income)}`, "amt inc"),
-        row("Expenses", `−${money(expense)}`, "amt exp"),
-        adjust ? row("Balance set", `${adjust > 0 ? "+" : "−"}${money(Math.abs(adjust))}`, adjust > 0 ? "amt inc" : "amt exp") : null,
-        row("End", money(closing), closing < 0 ? "total amt exp" : "total"),
-        row("Lowest", money(lowest === Infinity ? opening : lowest), lowest < 0 ? "amt exp" : "")),
+        row(t("sum.start"), money(opening)),
+        row(t("sum.income"), `+${money(income)}`, "amt inc"),
+        row(t("sum.expenses"), `−${money(expense)}`, "amt exp"),
+        adjust ? row(t("sum.balanceSet"), `${adjust > 0 ? "+" : "−"}${money(Math.abs(adjust))}`, adjust > 0 ? "amt inc" : "amt exp") : null,
+        row(t("sum.end"), money(closing), closing < 0 ? "total amt exp" : "total"),
+        row(t("sum.lowest"), money(lowest === Infinity ? opening : lowest), lowest < 0 ? "amt exp" : "")),
     );
   }
 
@@ -560,10 +573,10 @@
     const day = state.ledger && state.ledger.days.find((d) => d.date === dateIso);
     if (!day) { if (keepOpen) $("#day-dialog").close(); return; }
     state.dayOpen = dateIso;
-    $("#day-title").textContent = parseISO(dateIso).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+    $("#day-title").textContent = I18N.capitalize(fmtDate(parseISO(dateIso), LONG_DATE));
     const hasOverride = day.override !== undefined && day.override !== null;
-    $("#day-balance").textContent = `End-of-day balance: ${money(day.balance)}` +
-      (hasOverride ? ` (set manually, ${day.adjustment >= 0 ? "+" : "−"}${money(Math.abs(day.adjustment))} vs. calculated)` : "");
+    $("#day-balance").textContent = t("day.balance", { amount: money(day.balance) }) +
+      (hasOverride ? t("day.balanceManual", { diff: `${day.adjustment >= 0 ? "+" : "−"}${money(Math.abs(day.adjustment))}` }) : "");
     $("#day-add").hidden = !canEdit();
     $("#day-set-balance").hidden = !canEdit();
     const items = day.entries.map((e) => h("li", null,
@@ -571,7 +584,7 @@
         h("span", null, e.title, e.category ? h("span", { class: "muted small" }, ` · ${e.category}`) : null,
           e.recurring ? h("span", { class: "muted small" }, " ↻") : null),
         h("span", { class: `amt ${e.amount >= 0 ? "inc" : "exp"}` }, money(e.amount)))));
-    $("#day-entries").replaceChildren(...(items.length ? items : [h("li", { class: "muted" }, "Nothing planned for this day.")]));
+    $("#day-entries").replaceChildren(...(items.length ? items : [h("li", { class: "muted" }, t("day.nothing"))]));
     const dlg = $("#day-dialog");
     if (!dlg.open) dlg.showModal();
   }
@@ -585,7 +598,7 @@
     const ev = eventId ? state.events.get(eventId) : null;
     state.editing = { event: ev, occurrenceDate };
     const readOnly = !canEdit();
-    $("#event-dialog-title").textContent = ev ? (readOnly ? "Transaction" : "Edit transaction") : "New transaction";
+    $("#event-dialog-title").textContent = t(ev ? (readOnly ? "ev.view" : "ev.edit") : "ev.new");
     if (ev) {
       f.kind.value = ev.amount >= 0 ? "income" : "expense";
       f.title.value = ev.title;
@@ -602,7 +615,7 @@
       f.interval.value = "1";
     }
     $("#event-delete").hidden = !ev || readOnly;
-    $("#event-delete").textContent = ev && ev.recurrence !== "none" ? "Delete all repeats" : "Delete";
+    $("#event-delete").textContent = t(ev && ev.recurrence !== "none" ? "ev.deleteAll" : "ev.delete");
     $("#event-skip").hidden = !ev || readOnly || ev.recurrence === "none" || !occurrenceDate;
     for (const el of f.elements) {
       if (el.matches("[data-close]")) continue;
@@ -624,15 +637,14 @@
     const nthOpt = f.recurrence.querySelector("option[value=monthly_nth]");
     const v = f.start_date.value;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) {
-      dayOpt.textContent = "Monthly on this day number";
-      nthOpt.textContent = "Monthly on this weekday (e.g. first Monday)";
+      dayOpt.textContent = t("rec.monthly_day");
+      nthOpt.textContent = t("rec.monthly_nth");
       return;
     }
     const d = parseISO(v);
     const n = d.getDate();
-    dayOpt.textContent = `Monthly on day ${n}` + (n > 28 ? " (skips months without it)" : "");
-    const weekday = d.toLocaleDateString(undefined, { weekday: "long" });
-    nthOpt.textContent = `Monthly on the ${ORDINALS[Math.floor((n - 1) / 7)]} ${weekday}`;
+    dayOpt.textContent = t("rec.dayN", { n }) + (n > 28 ? t("rec.dayNSkips") : "");
+    nthOpt.textContent = I18N.monthlyNthLabel(d);
   }
 
   function updateUntil() {
@@ -655,11 +667,11 @@
     ev.preventDefault();
     const f = ev.target;
     const cents = parseMoney(f.amount.value);
-    if (!f.title.value.trim()) return showError($("#event-error"), "Please enter a title.");
-    if (!Number.isFinite(cents) || cents === 0) return showError($("#event-error"), "Please enter an amount, e.g. 49.90");
-    if (!f.start_date.value) return showError($("#event-error"), "Please pick a date.");
+    if (!f.title.value.trim()) return showError($("#event-error"), t("ev.errTitle"));
+    if (!Number.isFinite(cents) || cents === 0) return showError($("#event-error"), t("ev.errAmount"));
+    if (!f.start_date.value) return showError($("#event-error"), t("ev.errDate"));
     const interval = f.recurrence.value === "weeks" ? parseInterval(f.interval.value) : 1;
-    if (!Number.isFinite(interval)) return showError($("#event-error"), `Please enter how many weeks between repeats (a whole number from 1 to ${MAX_WEEKS_INTERVAL}).`);
+    if (!Number.isFinite(interval)) return showError($("#event-error"), t("ev.errInterval", { max: MAX_WEEKS_INTERVAL }));
     const body = {
       title: f.title.value,
       amount: f.kind.value === "income" ? Math.abs(cents) : -Math.abs(cents),
@@ -697,7 +709,7 @@
         await api("POST", `/calendars/${calId}/events`, body);
       }
       $("#event-dialog").close();
-      toast(scope === "one" ? "Saved for this day only" : scope === "all" ? "Saved for all repeats" : "Saved");
+      toast(t(scope === "one" ? "toast.savedOne" : scope === "all" ? "toast.savedAll" : "toast.saved"));
       await refresh();
     } catch (e) {
       showError($("#event-error"), e.message);
@@ -710,8 +722,8 @@
     const repeatChanged = body.recurrence !== existing.recurrence ||
       (body.interval || 1) !== (existing.interval || 1) ||
       (body.until_date || "") !== (existing.until_date || "");
-    const day = parseISO(occurrenceDate).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
-    $("#scope-text").textContent = `Apply your changes to "${existing.title}" on ${day} only, or to all repeats?`;
+    const day = fmtDate(parseISO(occurrenceDate), LONG_DATE);
+    $("#scope-text").textContent = t("scope.text", { title: existing.title, day });
     $("#scope-one").disabled = repeatChanged;
     $("#scope-hint").hidden = !repeatChanged;
     $("#scope-dialog").showModal();
@@ -729,12 +741,12 @@
   async function onEventDelete() {
     const e = state.editing && state.editing.event;
     if (!e) return;
-    const msg = e.recurrence !== "none" ? `Delete "${e.title}" and all its repeats?` : `Delete "${e.title}"?`;
+    const msg = t(e.recurrence !== "none" ? "ev.confirmDeleteAll" : "ev.confirmDelete", { title: e.title });
     if (!confirm(msg)) return;
     try {
       await api("DELETE", `/calendars/${state.calendar.id}/events/${e.id}`);
       $("#event-dialog").close();
-      toast("Deleted");
+      toast(t("toast.deleted"));
       await refresh();
     } catch (err) {
       showError($("#event-error"), err.message);
@@ -747,7 +759,7 @@
     try {
       await api("POST", `/calendars/${state.calendar.id}/events/${e.id}/skip`, { date: occurrenceDate });
       $("#event-dialog").close();
-      toast("Removed from this day");
+      toast(t("toast.removedDay"));
       await refresh();
     } catch (err) {
       showError($("#event-error"), err.message);
@@ -765,8 +777,8 @@
     state.balanceDate = dateIso;
     const hasOverride = day.override !== undefined && day.override !== null;
     const calculated = day.balance - (hasOverride ? day.adjustment : 0);
-    $("#balance-day").textContent = parseISO(dateIso).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" }) +
-      ` · calculated: ${money(calculated)}`;
+    $("#balance-day").textContent = I18N.capitalize(fmtDate(parseISO(dateIso), LONG_DATE)) +
+      t("bal.calculated", { amount: money(calculated) });
     f.balance.value = plainAmount(day.balance);
     $("#balance-clear").hidden = !hasOverride;
     $("#balance-dialog").showModal();
@@ -778,11 +790,11 @@
     ev.preventDefault();
     const f = ev.target;
     const cents = parseMoney(f.balance.value);
-    if (!Number.isFinite(cents)) return showError($("#balance-error"), "Please enter an amount, e.g. 1250.00 or -40");
+    if (!Number.isFinite(cents)) return showError($("#balance-error"), t("bal.err"));
     try {
       await api("PUT", `/calendars/${state.calendar.id}/balances/${state.balanceDate}`, { balance: cents });
       $("#balance-dialog").close();
-      toast("Balance set");
+      toast(t("toast.balanceSet"));
       await refresh();
     } catch (e) {
       showError($("#balance-error"), e.message);
@@ -793,7 +805,7 @@
     try {
       await api("DELETE", `/calendars/${state.calendar.id}/balances/${dateIso}`);
       if ($("#balance-dialog").open) $("#balance-dialog").close();
-      toast("Set balance removed");
+      toast(t("toast.balanceRemoved"));
       await refresh();
     } catch (e) {
       if ($("#balance-dialog").open) showError($("#balance-error"), e.message);
@@ -813,17 +825,17 @@
       onclick: () => { closeDayMenu(); fn(); },
     }, label);
     const items = [
-      h("div", { class: "ctx-head" }, parseISO(dateIso).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" }) +
+      h("div", { class: "ctx-head" }, fmtDate(parseISO(dateIso), { weekday: "short", day: "numeric", month: "short", year: "numeric" }) +
         ` · ${money(day.balance)}`),
-      item("Open day", () => openDay(dateIso)),
+      item(t("menu.open"), () => openDay(dateIso)),
     ];
     if (canEdit()) {
       items.push(
-        item("Add expense…", () => { openEvent(null, null, dateIso); $("#event-form").kind.value = "expense"; }),
-        item("Add income…", () => { openEvent(null, null, dateIso); $("#event-form").kind.value = "income"; }),
+        item(t("menu.addExpense"), () => { openEvent(null, null, dateIso); $("#event-form").kind.value = "expense"; }),
+        item(t("menu.addIncome"), () => { openEvent(null, null, dateIso); $("#event-form").kind.value = "income"; }),
         h("hr", { role: "separator" }),
-        item(hasOverride ? "Change balance on this day…" : "Set balance on this day…", () => openBalance(dateIso)));
-      if (hasOverride) items.push(item("Remove set balance", () => clearBalance(dateIso), "danger"));
+        item(t(hasOverride ? "menu.changeBalance" : "menu.setBalance"), () => openBalance(dateIso)));
+      if (hasOverride) items.push(item(t("menu.removeBalance"), () => clearBalance(dateIso), "danger"));
     }
     const menu = $("#day-menu");
     menu.replaceChildren(...items);
@@ -872,8 +884,8 @@
     f.reset();
     showError($("#calendar-error"), "");
     const c = edit ? state.calendar : null;
-    $("#calendar-dialog-title").textContent = c ? "Calendar settings" : "New calendar";
-    f.name.value = c ? c.name : (state.calendars.length ? "" : "Household");
+    $("#calendar-dialog-title").textContent = t(c ? "cal.settings" : "cal.new");
+    f.name.value = c ? c.name : (state.calendars.length ? "" : t("cal.defaultName"));
     f.currency.value = c ? c.currency : "EUR";
     f.start_balance.value = c ? plainAmount(c.start_balance) : "";
     f.start_date.value = c ? c.start_date : iso(new Date());
@@ -888,7 +900,7 @@
     ev.preventDefault();
     const f = ev.target;
     const bal = f.start_balance.value.trim() === "" ? 0 : parseMoney(f.start_balance.value);
-    if (!Number.isFinite(bal)) return showError($("#calendar-error"), "Starting balance is not a valid amount.");
+    if (!Number.isFinite(bal)) return showError($("#calendar-error"), t("cal.errBalance"));
     const body = {
       name: f.name.value,
       currency: f.currency.value.trim().toUpperCase(),
@@ -909,7 +921,7 @@
 
   async function onCalendarDelete() {
     if (!state.calendar) return;
-    if (!confirm(`Delete "${state.calendar.name}" and all its transactions for everyone? This cannot be undone.`)) return;
+    if (!confirm(t("cal.confirmDelete", { name: state.calendar.name }))) return;
     try {
       await api("DELETE", `/calendars/${state.calendar.id}`);
       $("#calendar-dialog").close();
@@ -929,7 +941,7 @@
     const owner = state.calendar.role === "owner";
     $("#share-add").hidden = !owner;
     $("#share-submit").hidden = !owner;
-    $("#member-list").replaceChildren(h("li", { class: "muted" }, "Loading…"));
+    $("#member-list").replaceChildren(h("li", { class: "muted" }, t("share.loading")));
     $("#share-dialog").showModal();
     await renderMembers();
   }
@@ -942,28 +954,28 @@
         api("GET", `/calendars/${calId}/members`),
         api("GET", `/calendars/${calId}/invites`),
       ]);
-      const roleLabel = { owner: "owner", editor: "can edit", viewer: "can view" };
+      const roleLabel = (r) => (["owner", "editor", "viewer"].includes(r) ? t(`share.role.${r}`) : r);
       const rows = members.map((m) => {
         const self = m.user_id === state.user.id;
         const canRemove = m.role !== "owner" && (owner || self);
         let access;
         if (owner && m.role !== "owner") {
-          access = h("select", { class: "role-select", "aria-label": `Access for ${m.display_name}`, onchange: (e) => changeRole(m, e.target) },
-            h("option", { value: "editor", selected: m.role === "editor" }, "Can edit"),
-            h("option", { value: "viewer", selected: m.role === "viewer" }, "Can view"));
+          access = h("select", { class: "role-select", "aria-label": t("share.accessFor", { name: m.display_name }), onchange: (e) => changeRole(m, e.target) },
+            h("option", { value: "editor", selected: m.role === "editor" }, t("share.canEdit")),
+            h("option", { value: "viewer", selected: m.role === "viewer" }, t("share.canView")));
         } else {
-          access = h("span", { class: "muted small" }, roleLabel[m.role] || m.role);
+          access = h("span", { class: "muted small" }, roleLabel(m.role));
         }
         return h("li", null,
-          h("div", { class: "who" }, h("span", null, m.display_name + (self ? " (you)" : "")), h("span", { class: "muted small" }, m.email)),
+          h("div", { class: "who" }, h("span", null, m.display_name + (self ? t("share.you") : "")), h("span", { class: "muted small" }, m.email)),
           access,
-          canRemove ? h("button", { type: "button", class: "btn ghost small danger", onclick: () => removeMember(m, self) }, self ? "Leave" : "Remove") : null);
+          canRemove ? h("button", { type: "button", class: "btn ghost small danger", onclick: () => removeMember(m, self) }, t(self ? "share.leave" : "share.remove")) : null);
       });
       for (const inv of invites) {
         rows.push(h("li", null,
-          h("div", { class: "who" }, h("span", null, inv.email), h("span", { class: "muted small" }, "invited · gets access after signing up")),
-          h("span", { class: "muted small" }, roleLabel[inv.role] || inv.role),
-          owner ? h("button", { type: "button", class: "btn ghost small danger", onclick: () => removeInvite(inv) }, "Cancel") : null));
+          h("div", { class: "who" }, h("span", null, inv.email), h("span", { class: "muted small" }, t("share.invited"))),
+          h("span", { class: "muted small" }, roleLabel(inv.role)),
+          owner ? h("button", { type: "button", class: "btn ghost small danger", onclick: () => removeInvite(inv) }, t("share.cancelInvite")) : null));
       }
       $("#member-list").replaceChildren(...rows);
     } catch (e) {
@@ -975,7 +987,7 @@
     showError($("#share-error"), "");
     try {
       await api("PATCH", `/calendars/${state.calendar.id}/members/${m.user_id}`, { role: select.value });
-      toast("Access updated");
+      toast(t("share.accessUpdated"));
       await renderMembers();
     } catch (e) {
       select.value = m.role;
@@ -984,7 +996,7 @@
   }
 
   async function removeInvite(inv) {
-    if (!confirm(`Cancel the invitation for ${inv.email}?`)) return;
+    if (!confirm(t("share.confirmCancelInvite", { email: inv.email }))) return;
     try {
       await api("DELETE", `/calendars/${state.calendar.id}/invites/${encodeURIComponent(inv.email)}`);
       await renderMembers();
@@ -994,7 +1006,7 @@
   }
 
   async function removeMember(m, self) {
-    if (!confirm(self ? "Leave this calendar?" : `Remove ${m.display_name}?`)) return;
+    if (!confirm(self ? t("share.confirmLeave") : t("share.confirmRemove", { name: m.display_name }))) return;
     try {
       await api("DELETE", `/calendars/${state.calendar.id}/members/${m.user_id}`);
       if (self) {
@@ -1016,7 +1028,7 @@
     try {
       const res = await api("POST", `/calendars/${state.calendar.id}/members`, { email: f.email.value, role: f.role.value });
       f.email.value = "";
-      toast(res && res.user_id ? "Access granted" : "Invited — they get access when they sign up with this e-mail");
+      toast(t(res && res.user_id ? "share.granted" : "share.invitedToast"));
       await renderMembers();
     } catch (e) {
       showError($("#share-error"), e.message);
@@ -1082,7 +1094,7 @@
         ? exportFile.file : await getExportFile();
       if (!canShareFiles() || !navigator.canShare({ files: [file] })) {
         downloadFile(file);
-        toast("Downloaded");
+        toast(t("export.downloaded"));
         return;
       }
       await navigator.share({ files: [file], title: file.name });
@@ -1090,10 +1102,10 @@
       if (e && e.name === "AbortError") return; // share sheet dismissed
       if (e && e.name === "NotAllowedError" && exportFile && exportFile.file) {
         downloadFile(exportFile.file);
-        toast("Sharing not allowed here — downloaded instead");
+        toast(t("export.notAllowed"));
         return;
       }
-      showError($("#share-error"), (e && e.message) || "Export failed");
+      showError($("#share-error"), (e && e.message) || t("export.failed"));
     }
   }
 
@@ -1101,7 +1113,7 @@
     showError($("#share-error"), "");
     try {
       downloadFile(await getExportFile());
-      toast("Downloaded");
+      toast(t("export.downloaded"));
     } catch (e) {
       showError($("#share-error"), e.message);
     }
@@ -1127,15 +1139,15 @@
     const file = ev.target.files && ev.target.files[0];
     if (!file) return;
     if ($("#calendar-dialog").open) showError($("#calendar-error"), "");
-    if (file.size > MAX_IMPORT_BYTES) return importFailed("This file is too large to import (max 1 MB).");
+    if (file.size > MAX_IMPORT_BYTES) return importFailed(t("import.tooLarge"));
     let data;
     try {
       data = JSON.parse(await file.text());
     } catch {
-      return importFailed("This file is not a valid JSON file.");
+      return importFailed(t("import.invalidJson"));
     }
     if (!data || typeof data !== "object" || data.format !== "eurofish-calendar") {
-      return importFailed("This file is not a eurofish calendar export.");
+      return importFailed(t("import.notExport"));
     }
     const buttons = [$("#import-choose"), $("#empty-import")];
     buttons.forEach((b) => { b.disabled = true; });
@@ -1146,7 +1158,7 @@
       localStorageSet("calendar", res.calendar.id);
       await loadCalendars(res.calendar.id);
       const n = res.events;
-      toast(`Imported "${res.calendar.name}" with ${n} transaction${n === 1 ? "" : "s"}`);
+      toast(tn("import.done", n, { name: res.calendar.name }));
     } catch (e) {
       importFailed(e.message);
     } finally {
@@ -1163,23 +1175,66 @@
     const themes = window.EurofishTheme;
     if (!select) return;
     if (!themes) { select.closest(".theme-picker").hidden = true; return; }
-    const groups = new Map();
-    const nodes = [];
-    for (const t of themes.list) {
-      const opt = h("option", { value: t.id }, t.label);
-      if (!t.group) { nodes.push(opt); continue; }
-      if (!groups.has(t.group)) {
-        const g = h("optgroup", { label: t.group });
-        groups.set(t.group, g);
-        nodes.push(g);
-      }
-      groups.get(t.group).append(opt);
-    }
-    select.replaceChildren(...nodes);
-    select.value = themes.get();
+    fillThemePicker();
     select.addEventListener("change", () => {
       select.value = themes.set(select.value);
     });
+  }
+
+  // (Re)builds the theme options with labels in the UI language.
+  function fillThemePicker() {
+    const select = $("#theme-select");
+    const themes = window.EurofishTheme;
+    if (!select || !themes) return;
+    const label = (key, fallback) => { const v = t(key); return v === key ? fallback : v; };
+    const groups = new Map();
+    const nodes = [];
+    for (const th of themes.list) {
+      const opt = h("option", { value: th.id }, label(`theme.${th.id}`, th.label));
+      if (!th.group) { nodes.push(opt); continue; }
+      if (!groups.has(th.group)) {
+        const g = h("optgroup", { label: label(`theme.group.${th.group}`, th.group) });
+        groups.set(th.group, g);
+        nodes.push(g);
+      }
+      groups.get(th.group).append(opt);
+    }
+    select.replaceChildren(...nodes);
+    select.value = themes.get();
+  }
+
+  // ---------- language (English, Russian, Spanish) ----------
+  // "System" (the default) follows the language set on the system, on
+  // desktop and on phones; the choice is remembered in this browser.
+  function fillLanguagePicker() {
+    const select = $("#lang-select");
+    if (!select) return;
+    select.replaceChildren(...I18N.list().map((l) => h("option", { value: l.id }, l.label)));
+    select.value = I18N.get();
+  }
+
+  function initLanguagePicker() {
+    const select = $("#lang-select");
+    if (!select) return;
+    fillLanguagePicker();
+    select.addEventListener("change", () => { I18N.set(select.value); });
+    I18N.onChange(relocalize);
+  }
+
+  // Redraws all visible text after the language changed.
+  function relocalize() {
+    I18N.applyStatic();
+    $("#auth-submit").textContent = t(state.authMode === "signup" ? "auth.createAccount" : "auth.signIn");
+    fillThemePicker();
+    fillLanguagePicker();
+    if ($("#event-form").start_date.value) updateRepeatLabels();
+    if ($("#app-view").hidden) return;
+    renderCalendarList();
+    renderMonthTitle();
+    if (state.calendar && state.ledger) {
+      renderGrid();
+      renderSummary();
+    }
   }
 
   // ---------- wiring ----------
@@ -1199,7 +1254,9 @@
   }
 
   function wire() {
+    I18N.applyStatic();
     initThemePicker();
+    initLanguagePicker();
     $("#tab-login").addEventListener("click", () => setAuthMode("login"));
     $("#tab-signup").addEventListener("click", () => setAuthMode("signup"));
     $("#auth-form").addEventListener("submit", onAuthSubmit);

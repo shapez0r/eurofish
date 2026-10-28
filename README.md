@@ -11,6 +11,7 @@ household so everyone plans with the same numbers.
 - 🖱️ Right-click a day for quick actions: open day, add expense/income, set or remove the balance on that day
 - 🚨 Days that would go negative are highlighted; monthly start/income/expenses/end/lowest summary
 - 🎨 Colour themes: pick one in the sidebar under **Theme** — *System* (follows your device's light/dark setting), light themes *Cyber light*, *Paper*, *Pink* and *Lavender*, or dark themes *Cyber night*, *Terminal*, *Purple* and *Rose night* (remembered per browser)
+- 🌐 English, Russian and Spanish UI: follows your device's language by default (dates, weekday and month names included); pick another under **Language** in the sidebar (remembered per browser)
 - 👥 Multiple calendars per user, shared with others by e-mail as *editor* or *viewer* (people without an account yet get access as soon as they sign up)
 - 📤 Export a calendar as a JSON file from the **Share** dialog — on iPhone/Android "Send file…" opens the share sheet so you can send it directly via Gmail, Telegram, etc. (needs HTTPS; over plain HTTP the file is downloaded instead)
 - 📥 Import such a JSON file as a new calendar (owned by you): **+** next to *Calendars* → **Choose .json file…**, or **Import from file…** on the start screen

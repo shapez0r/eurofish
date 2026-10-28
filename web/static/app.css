@@ -315,7 +315,7 @@ textarea { resize: vertical; }
 .side-section { display: flex; flex-direction: column; gap: .5rem; }
 .side-head { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px dashed var(--line); padding-bottom: .25rem; }
 .side-head h2 { font-size: 16px; text-transform: uppercase; color: var(--muted); }
-.theme-picker select { width: 100%; }
+.theme-picker select, .lang-picker select { width: 100%; }
 .side-foot { margin-top: auto; display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
 .cal-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .cal-list button {
@@ -546,7 +546,7 @@ dialog h2 { padding-bottom: .4rem; border-bottom: 2px dashed var(--line); }
   .summary-grid { gap: .2rem .5rem; }
   .summary-grid, .summary-grid dt, .summary-grid dd { font-size: 12px; line-height: 1.25; }
   .side-foot .btn.small { padding: .2rem .4rem; font-size: 12px; }
-  .theme-picker select { font-size: 12px; line-height: 1.25; padding: .2rem .4rem; }
+  .theme-picker select, .lang-picker select { font-size: 12px; line-height: 1.25; padding: .2rem .4rem; }
 
   /* Compact "new/edit transaction" and "day" dialogs: the whole form fits on an
      iPhone SE screen without scrolling. Inputs keep 16px so iOS Safari does not
