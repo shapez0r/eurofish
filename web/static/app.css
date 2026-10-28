@@ -1,7 +1,7 @@
 /* ---------- pixel font (served from the binary, no external requests) ---------- */
 @font-face {
   font-family: "Eurofish Pixel";
-  src: url("pixel.woff2") format("woff2");
+  src: url("pixel.woff2?v=cyrillic") format("woff2");
   font-weight: normal;
   font-style: normal;
   font-display: swap;
