@@ -214,6 +214,9 @@
     const btn = $("#password-toggle");
     if (!input || !btn) return;
     input.type = visible ? "text" : "password";
+    // The "repeat password" field (sign-up) is shown or hidden together with it.
+    const confirmInput = $("#auth-form").password_confirm;
+    if (confirmInput) confirmInput.type = input.type;
     btn.setAttribute("aria-pressed", String(visible));
     const label = t(visible ? "auth.hidePassword" : "auth.showPassword");
     btn.setAttribute("aria-label", label);
@@ -234,6 +237,8 @@
     $("#tab-login").setAttribute("aria-selected", String(!signup));
     $("#tab-signup").setAttribute("aria-selected", String(signup));
     $("#name-field").hidden = !signup;
+    $("#password-confirm-field").hidden = !signup;
+    $("#auth-form").password_confirm.required = signup;
     $("#auth-submit").textContent = t(signup ? "auth.createAccount" : "auth.signIn");
     $("#auth-form").password.autocomplete = signup ? "new-password" : "current-password";
     setPasswordVisible(false);
@@ -260,6 +265,7 @@
       const body = { email: f.email.value, password: f.password.value };
       if (state.authMode === "signup") body.display_name = f.display_name.value;
       if (state.authMode === "signup" && body.password.length < 8) throw new Error(t("auth.passwordShort"));
+      if (state.authMode === "signup" && body.password !== f.password_confirm.value) throw new Error(t("auth.passwordMismatch"));
       state.user = await api("POST", `/auth/${state.authMode}`, body);
       f.reset();
       setPasswordVisible(false);
