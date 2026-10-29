@@ -125,8 +125,8 @@ func New(cfg *config.Config, database *db.DB, c cache.Cache, log *slog.Logger, v
 
 	// Embedded single-page web UI (no separate frontend deployment needed).
 	// The UI must never run a stale app.js from the browser cache after an
-	// update: index.html links app.js/app.css with a content hash and all UI
-	// files are revalidated on every load.
+	// update: index.html links its scripts and app.css with a content hash and
+	// all UI files are revalidated on every load.
 	ui := web.Static()
 	index := versionedIndex(ui)
 	serveIndex := func(c *fiber.Ctx) error {
@@ -176,20 +176,27 @@ func (s *Server) RunJanitor(ctx context.Context) {
 }
 
 // versionedIndex returns index.html with "?v=<content hash>" appended to the
-// app.js and app.css links, so browsers load the new UI right after an update.
+// script (theme.js, i18n.js, app.js) and app.css links, so browsers load the
+// new UI right after an update. i18n.js must be versioned too: a stale cached
+// copy lacks newly added translations, and the UI would then show raw keys
+// such as "auth.passwordConfirm" instead of the text.
 func versionedIndex(ui fs.FS) []byte {
 	page, err := fs.ReadFile(ui, "index.html")
 	if err != nil {
 		return nil
 	}
+	scripts := []string{"theme.js", "i18n.js", "app.js"}
 	h := sha256.New()
-	for _, name := range []string{"app.js", "app.css"} {
+	for _, name := range append(scripts, "app.css") {
 		if b, err := fs.ReadFile(ui, name); err == nil {
 			h.Write(b)
 		}
 	}
 	v := hex.EncodeToString(h.Sum(nil))[:12]
-	out := strings.Replace(string(page), `src="app.js"`, `src="app.js?v=`+v+`"`, 1)
+	out := string(page)
+	for _, name := range scripts {
+		out = strings.Replace(out, `src="`+name+`"`, `src="`+name+`?v=`+v+`"`, 1)
+	}
 	out = strings.Replace(out, `href="app.css"`, `href="app.css?v=`+v+`"`, 1)
 	return []byte(out)
 }

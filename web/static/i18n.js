@@ -850,9 +850,16 @@
 
   // ---------- static page text ----------
   // data-i18n="key" sets the text; data-i18n-attr="aria-label:key;title:key" sets attributes.
+  // A key without a translation keeps the English text from index.html instead
+  // of showing the raw key (e.g. "auth.passwordConfirm").
   function applyStatic(root) {
     const scope = root || document;
-    scope.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.getAttribute("data-i18n")); });
+    scope.querySelectorAll("[data-i18n]").forEach((el) => {
+      const key = el.getAttribute("data-i18n");
+      if (!el.hasAttribute("data-i18n-default")) el.setAttribute("data-i18n-default", el.textContent);
+      const v = t(key);
+      el.textContent = v === key ? el.getAttribute("data-i18n-default") : v;
+    });
     scope.querySelectorAll("[data-i18n-attr]").forEach((el) => {
       for (const pair of el.getAttribute("data-i18n-attr").split(";")) {
         const [attr, key] = pair.split(":").map((s) => s.trim());
