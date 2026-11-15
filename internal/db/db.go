@@ -30,6 +30,9 @@ const (
 type DB struct {
 	*sql.DB
 	Dialect Dialect
+	// BackupDir, if set, receives a copy of a SQLite database before
+	// pending migrations are applied to it.
+	BackupDir string
 }
 
 const sqlitePragmas = "_pragma=busy_timeout(5000)" +
@@ -129,15 +132,30 @@ func (db *DB) Migrate(ctx context.Context) error {
 	}
 	sort.Strings(names)
 
+	var applied int
+	if err := conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations").Scan(&applied); err != nil {
+		return err
+	}
+	var pending []string
 	for _, name := range names {
-		version := strings.TrimSuffix(name, ".sql")
 		var n int
-		if err := conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations WHERE version = ?", version).Scan(&n); err != nil {
+		if err := conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations WHERE version = ?", strings.TrimSuffix(name, ".sql")).Scan(&n); err != nil {
 			return err
 		}
-		if n > 0 {
-			continue
+		if n == 0 {
+			pending = append(pending, name)
 		}
+	}
+	// An existing SQLite database is copied before its schema changes, so a
+	// failed or faulty migration can never cost data.
+	if len(pending) > 0 && applied > 0 && db.Dialect == SQLite && db.BackupDir != "" {
+		if err := db.backupBeforeMigration(ctx, conn, strings.TrimSuffix(pending[0], ".sql")); err != nil {
+			return fmt.Errorf("backup before migration: %w", err)
+		}
+	}
+
+	for _, name := range pending {
+		version := strings.TrimSuffix(name, ".sql")
 		body, err := migrationsFS.ReadFile(dir + "/" + name)
 		if err != nil {
 			return err

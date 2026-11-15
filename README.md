@@ -36,8 +36,12 @@ click **Create account**, and start planning. Data lives in the
 
 ```sh
 make build                  # -> bin/eurofish (static, CGO-free)
-./bin/eurofish              # listens on :8080, stores data in ./data
+./bin/eurofish              # listens on :8080, stores data in ~/.local/share/eurofish
 ```
+
+The data directory is outside the source folder, so deleting or replacing the
+source never touches your accounts and calendars. Set `EUROFISH_DATA_DIR` to
+use another location.
 
 Install it as a hardened systemd service on any Linux machine or VM:
 
@@ -50,14 +54,21 @@ sudo ./scripts/install.sh   # binary -> /usr/local/bin, data -> /var/lib/eurofis
 
 ## Updating: recompile and restart for a new version
 
-Your data is kept across updates (Docker volume, `./data` or
-`/var/lib/eurofish`), and database migrations run automatically when the new
-version starts. Back up the SQLite file first if you want to be safe, e.g.
-`cp data/eurofish.db data/eurofish.db.bak` (binary) or
-`docker compose cp eurofish:/data/eurofish.db ./eurofish.db.bak` (Docker).
+Your data is kept across updates: it lives outside the source folder
+(`~/.local/share/eurofish`, the Docker volume or `/var/lib/eurofish`), so it
+does not matter whether you `git pull`, extract the new archive over the old
+folder or into a new one. Database migrations run automatically when the new
+version starts; before they change an existing SQLite database, a copy is
+saved in the `backups` folder of the data directory (the last 10 are kept).
+To restore one, stop eurofish and copy it over `eurofish.db` (removing any
+`eurofish.db-wal` and `eurofish.db-shm` next to it).
 
-First put the new source in place (`git pull`, or extract the new archive over
-the old folder), then use the commands for the way you run eurofish:
+A database in the source folder's `data/eurofish.db` is copied to the data
+directory automatically the first time `make run` (or `./bin/eurofish`) is
+started from that folder, as long as the data directory has no database yet.
+The original file is left in place.
+
+First put the new source in place, then use the commands for the way you run eurofish:
 
 **Docker (single node)** — rebuild the image and recreate the container:
 
@@ -121,7 +132,7 @@ a single node.
 | Variable | Default | Description |
 |---|---|---|
 | `EUROFISH_ADDR` | `:8080` | Listen address (all interfaces → reachable from the LAN) |
-| `EUROFISH_DATA_DIR` | `./data` (`/data` in the container) | Directory for the SQLite database |
+| `EUROFISH_DATA_DIR` | `$XDG_DATA_HOME/eurofish`, else `~/.local/share/eurofish` (`/data` in the container) | Directory for the SQLite database and its `backups` |
 | `EUROFISH_DB_DRIVER` | `sqlite` | `sqlite` or `mariadb` (alias `mysql`) |
 | `EUROFISH_DB_DSN` | `file:<data dir>/eurofish.db` | e.g. `user:pass@tcp(host:3306)/eurofish?charset=utf8mb4` for MariaDB |
 | `EUROFISH_CACHE_URL` | `memory` | `memory` or `redis://host:6379/0` (Valkey or Redis; `valkey://` also accepted) |

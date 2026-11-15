@@ -86,6 +86,8 @@ invalidation, on one node or many.
   for 60 s (memory or Valkey). Any replica can serve any request.
 - **Migrations** run on start-up. On MariaDB a `GET_LOCK` makes concurrent
   replica start-ups safe; on SQLite immediate transactions serialise them.
+  Each migration runs in its own transaction, and an existing SQLite database
+  is first copied (`VACUUM INTO`) to `<data dir>/backups`.
 - **Health** — `/healthz` (process up) and `/readyz` (database and cache
   reachable) for load balancers and orchestrators.
 - **Graceful shutdown** on SIGTERM with a 15 s drain.

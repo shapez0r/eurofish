@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -102,16 +103,48 @@ func openDB(ctx context.Context, cfg *config.Config) (*db.DB, error) {
 		if err := os.MkdirAll(cfg.DataDir, 0o750); err != nil {
 			return nil, fmt.Errorf("create data dir: %w", err)
 		}
+		if err := adoptLegacyDB(ctx, cfg); err != nil {
+			return nil, err
+		}
 	}
 	database, err := db.Open(ctx, cfg.DBDriver, cfg.DBDSN)
 	if err != nil {
 		return nil, err
+	}
+	if cfg.DBDriver == "sqlite" {
+		database.BackupDir = filepath.Join(cfg.DataDir, "backups")
 	}
 	if err := database.Migrate(ctx); err != nil {
 		database.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 	return database, nil
+}
+
+// adoptLegacyDB copies ./data/eurofish.db from the working directory into the
+// data directory when the latter has no database yet. The source is left as is.
+func adoptLegacyDB(ctx context.Context, cfg *config.Config) error {
+	if cfg.LegacyDataDir == "" {
+		return nil
+	}
+	src := filepath.Join(cfg.LegacyDataDir, "eurofish.db")
+	dst := filepath.Join(cfg.DataDir, "eurofish.db")
+	srcAbs, err1 := filepath.Abs(src)
+	dstAbs, err2 := filepath.Abs(dst)
+	if err1 != nil || err2 != nil || srcAbs == dstAbs {
+		return nil
+	}
+	if _, err := os.Stat(dst); err == nil {
+		return nil
+	}
+	if fi, err := os.Stat(src); err != nil || fi.IsDir() {
+		return nil
+	}
+	if err := db.CopySQLite(ctx, src, dst); err != nil {
+		return fmt.Errorf("copy database from %s to %s: %w", src, dst, err)
+	}
+	fmt.Fprintf(os.Stderr, "eurofish: copied existing database %s to %s\n", srcAbs, dstAbs)
+	return nil
 }
 
 // healthcheck is used by container HEALTHCHECKs (the scratch image has no curl).

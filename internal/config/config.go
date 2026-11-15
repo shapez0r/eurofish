@@ -16,8 +16,14 @@ import (
 type Config struct {
 	// Addr is the listen address, e.g. ":8080" (all interfaces, reachable from the LAN).
 	Addr string
-	// DataDir holds the SQLite database when the sqlite driver is used.
+	// DataDir holds the SQLite database (and its automatic backups) when the
+	// sqlite driver is used. It defaults to a per-user directory outside the
+	// source tree, so replacing or re-extracting the code never touches it.
 	DataDir string
+	// LegacyDataDir is ./data in the working directory. When DataDir was not
+	// set explicitly and has no database yet, a database found there is
+	// copied into DataDir on start-up. Empty when not applicable.
+	LegacyDataDir string
 	// DBDriver is "sqlite" (default, single node) or "mysql"/"mariadb" (shared, multi-node).
 	DBDriver string
 	// DBDSN is the driver-specific data source name.
@@ -43,7 +49,7 @@ type Config struct {
 func Load() (*Config, error) {
 	c := &Config{
 		Addr:        env("EUROFISH_ADDR", ":8080"),
-		DataDir:     env("EUROFISH_DATA_DIR", "./data"),
+		DataDir:     env("EUROFISH_DATA_DIR", ""),
 		DBDriver:    strings.ToLower(env("EUROFISH_DB_DRIVER", "sqlite")),
 		CacheURL:    env("EUROFISH_CACHE_URL", "memory"),
 		ProxyHeader: env("EUROFISH_PROXY_HEADER", ""),
@@ -79,6 +85,16 @@ func Load() (*Config, error) {
 	switch c.DBDriver {
 	case "sqlite", "sqlite3":
 		c.DBDriver = "sqlite"
+		if c.DataDir == "" {
+			dir, err := defaultDataDir()
+			if err != nil {
+				return nil, err
+			}
+			c.DataDir = dir
+			if c.DBDSN == "" {
+				c.LegacyDataDir = "./data"
+			}
+		}
 		if c.DBDSN == "" {
 			c.DBDSN = "file:" + filepath.Join(c.DataDir, "eurofish.db")
 		}
@@ -115,6 +131,18 @@ func (c *Config) SignupAllowedFrom(ip string) bool {
 		}
 	}
 	return false
+}
+
+// defaultDataDir returns $XDG_DATA_HOME/eurofish or ~/.local/share/eurofish.
+func defaultDataDir() (string, error) {
+	if x := strings.TrimSpace(os.Getenv("XDG_DATA_HOME")); x != "" && filepath.IsAbs(x) {
+		return filepath.Join(x, "eurofish"), nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return "", fmt.Errorf("cannot determine a data directory (no home directory); set EUROFISH_DATA_DIR")
+	}
+	return filepath.Join(home, ".local", "share", "eurofish"), nil
 }
 
 func env(key, def string) string {

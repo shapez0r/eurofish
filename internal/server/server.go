@@ -149,7 +149,11 @@ func New(cfg *config.Config, database *db.DB, c cache.Cache, log *slog.Logger, v
 }
 
 func (s *Server) Listen() error {
-	s.log.Info("eurofish listening", "addr", s.cfg.Addr, "db", string(s.db.Dialect), "cache", s.cache.Name(), "version", s.version)
+	attrs := []any{"addr", s.cfg.Addr, "db", string(s.db.Dialect), "cache", s.cache.Name(), "version", s.version}
+	if s.db.Dialect == db.SQLite {
+		attrs = append(attrs, "data_dir", s.cfg.DataDir)
+	}
+	s.log.Info("eurofish listening", attrs...)
 	return s.app.Listen(s.cfg.Addr)
 }
 
