@@ -1377,10 +1377,18 @@
     }
     document.querySelectorAll("[data-close]").forEach((b) =>
       b.addEventListener("click", () => b.closest("dialog").close()));
-    // Close dialogs when clicking on the backdrop.
-    document.querySelectorAll("dialog").forEach((d) => d.addEventListener("click", (e) => {
-      if (e.target === d) d.close();
-    }));
+    // Close dialogs when clicking on the backdrop. Both press and release must
+    // happen there: selecting text in a field and releasing the mouse button
+    // outside the dialog also fires a click on the dialog, which must not close it.
+    document.querySelectorAll("dialog").forEach((d) => {
+      let pressedOnBackdrop = false;
+      d.addEventListener("pointerdown", (e) => { pressedOnBackdrop = e.target === d; });
+      d.addEventListener("click", (e) => {
+        const close = pressedOnBackdrop && e.target === d;
+        pressedOnBackdrop = false;
+        if (close) d.close();
+      });
+    });
 
     document.addEventListener("keydown", (e) => {
       if (!$("#day-menu").hidden) return; // the menu handles its own keys
